@@ -1,0 +1,103 @@
+---
+title: Installation
+description: Set up your development environment and run the DX SaaS Template locally
+sidebarTitle: Installation
+---
+
+## Prerequisites
+
+Make sure you have the following installed:
+
+- **Rust** (latest stable) — [rustup.rs](https://rustup.rs)
+- **Dioxus CLI** — `curl -sSL http://dioxus.dev/install.sh | sh`
+- **Bun** — [bun.sh](https://bun.sh) (for Tailwind CSS)
+- **Docker** — for MongoDB, Redis, and Mailpit
+
+## Quick Start
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/your-org/dx-saas-template.git
+    cd dx-saas-template
+    ```
+  </Step>
+  <Step title="Copy environment variables">
+    ```bash
+    cp .env.example .env
+    ```
+
+    Edit `.env` with your configuration. Key variables:
+    - `DATABASE_URL` — MongoDB connection string (default: `mongodb://localhost:27017`)
+    - `REDIS_URL` — Redis connection string (default: `redis://localhost:6379`)
+    - `SESSION_SECRET` — Hex-encoded secret, at least 64 bytes
+    - `ZITADEL_DOMAIN` — Your Zitadel instance domain
+    - `BASE_URL` — Your app's base URL (default: `http://localhost:8080`)
+  </Step>
+  <Step title="Start infrastructure">
+    ```bash
+    docker compose up -d
+    ```
+
+    This starts:
+    - **MongoDB** as a replica set on port `27017`
+    - **Redis (Valkey)** on port `6379`
+    - **Mailpit** with SMTP on `1025` and web UI on `8025`
+  </Step>
+  <Step title="Install frontend dependencies">
+    ```bash
+    bun install
+    ```
+  </Step>
+  <Step title="Run the development server">
+    ```bash
+    dx serve --addr 0.0.0.0
+    ```
+
+    The app will be available at `http://localhost:8080`. The dev server auto-reloads on code changes and runs Tailwind CSS automatically.
+  </Step>
+</Steps>
+
+## Project Commands
+
+| Command | Description |
+| --- | --- |
+| `dx serve --addr 0.0.0.0` | Start development server with hot reload |
+| `dx build --release --platform web` | Production build |
+| `bunx @tailwindcss/cli -i tailwind.css -o ./assets/tailwind.css` | Build Tailwind CSS manually |
+| `cargo fmt --all -- --check` | Check formatting |
+| `cargo clippy --workspace --all-targets -- -D warnings` | Lint |
+| `cargo machete` | Detect unused dependencies |
+
+<Note>
+The `dx serve` command automatically compiles Tailwind CSS. You only need to run the Tailwind CLI manually for CI builds or when `dx serve` is not running.
+</Note>
+
+## Environment Variables
+
+<AccordionGroup>
+  <Accordion title="Core Settings">
+    - `DATABASE_URL` — MongoDB connection string
+    - `REDIS_URL` — Redis/Valkey connection string
+    - `BASE_URL` — Public URL of your application
+    - `SESSION_SECRET` — Hex-encoded session signing key (64+ bytes)
+    - `SECURE_COOKIES` — Set to `true` in production (HTTPS)
+  </Accordion>
+  <Accordion title="Zitadel Auth">
+    - `ZITADEL_DOMAIN` — Your Zitadel instance (e.g., `auth.example.com`)
+    - `ZITADEL_ORG_ID` — Organization ID
+    - `ZITADEL_SERVICE_USER_TOKEN` — Service account PAT for Session API
+  </Accordion>
+  <Accordion title="Email (SMTP)">
+    - `SMTP_HOST` — SMTP server host
+    - `SMTP_PORT` — SMTP port (default: `1025` for Mailpit)
+    - `SMTP_USERNAME` — SMTP username (optional for Mailpit)
+    - `SMTP_PASSWORD` — SMTP password (optional for Mailpit)
+    - `SMTP_FROM` — Sender email address
+  </Accordion>
+  <Accordion title="Billing (Polar)">
+    - `POLAR_ACCESS_TOKEN` — Polar API access token
+    - `POLAR_WEBHOOK_SECRET` — Webhook verification secret
+    - `POLAR_ORGANIZATION_ID` — Your Polar organization ID
+  </Accordion>
+</AccordionGroup>

@@ -1,0 +1,68 @@
+---
+title: Introduction
+description: Learn about the DX SaaS Template — a fullstack Rust starter built with Dioxus 0.7
+sidebarTitle: Introduction
+---
+
+## What is DX SaaS Template?
+
+DX SaaS Template is a production-ready fullstack SaaS starter built entirely in Rust. It uses **Dioxus 0.7** for both the server and the WASM client, compiled from a single codebase via Cargo feature flags.
+
+<Tip>
+Everything compiles to two binaries: a server (Axum + SSR) and a WASM client — from the same source tree.
+</Tip>
+
+## Stack Overview
+
+<CardGroup cols={2}>
+  <Card title="Dioxus 0.7" icon="code">
+    Fullstack Rust framework with SSR, hydration, server functions, and a React-like component model.
+  </Card>
+  <Card title="MongoDB" icon="database">
+    Document database running as a replica set for transaction support. Single `users` collection with unique indexes.
+  </Card>
+  <Card title="Zitadel" icon="shield">
+    Enterprise-grade OIDC identity provider with Session API v2 integration for login, registration, and MFA.
+  </Card>
+  <Card title="TailwindCSS + DaisyUI" icon="palette">
+    Utility-first CSS with DaisyUI 5 component library. Dark theme by default.
+  </Card>
+</CardGroup>
+
+## Architecture
+
+The project uses **feature-gated compilation** to split code between server and client:
+
+- `#[cfg(feature = "server")]` — Server-only code (MongoDB, Axum, sessions)
+- `#[cfg(feature = "web")]` — Client-only code (WASM bindings, browser APIs)
+
+Server functions use the `#[post("/api/...")]` macro and can accept a `session: auth::UserSession` parameter for authentication.
+
+## Project Structure
+
+```
+src/
+├── main.rs          # Dual entry point (server + client)
+├── routes.rs        # Route enum with layouts
+├── pages/           # Page components (Home, Dashboard, Settings, Docs)
+├── components/      # Shared UI (Navbar, DashboardShell, Toasts)
+├── models/          # Shared types (LoggedInData, AppError)
+└── server/          # Server-only (AppState, Config, Database)
+
+crates/
+├── auth/            # Zitadel OIDC + session management
+├── crypto/          # Argon2, AES-256-GCM, token generation
+├── smtp/            # Email sending via lettre
+└── polar/           # Polar.sh billing API
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="rocket" href="/docs/getting-started/installation">
+    Set up your development environment and run the template locally.
+  </Card>
+  <Card title="Authentication" icon="lock" href="/docs/guides/authentication">
+    Learn how the Zitadel OIDC auth flow works end to end.
+  </Card>
+</CardGroup>

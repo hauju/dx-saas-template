@@ -1,0 +1,24 @@
+[package]
+name = "smtp"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[dependencies]
+lettre = { version = "0.11", default-features = false, features = [
+    "builder",
+    "pool",
+    "smtp-transport",
+    "tokio1",
+    "tokio1-rustls-tls",
+    "rustls",
+    "ring",
+    "webpki-roots",
+] }
+secrecy = "0.10"
+thiserror = "2.0.18"
+tokio = { version = "1", features = ["time"] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }

@@ -1,0 +1,22 @@
+/* Minimal base styles - DaisyUI handles component styling */
+
+/* Smooth scrolling */
+html {
+    scroll-behavior: smooth;
+}
+
+/* Remove default focus outlines, DaisyUI handles focus states */
+*:focus {
+    outline: none;
+}
+
+/* Subtle transitions for interactive elements */
+a, button {
+    transition: all 0.15s ease;
+}
+
+/* Font smoothing for cleaner text */
+body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}

@@ -1,0 +1,116 @@
+---
+title: Authentication
+description: How OIDC authentication works with Zitadel in the DX SaaS Template
+sidebarTitle: Authentication
+---
+
+## Overview
+
+The template uses **Zitadel** as the identity provider, integrated via OIDC and the Session API v2. Authentication is session-based using `tower-sessions` with Redis as the session store.
+
+<Tip>
+Zitadel provides enterprise features like MFA, passwordless login, and organization management out of the box.
+</Tip>
+
+## Auth Flow
+
+<Steps>
+  <Step title="User clicks Sign In">
+    The user navigates to `/login` which renders the `LoginPage` component from the `auth` crate. This page collects the user's email and password.
+  </Step>
+  <Step title="Server validates credentials">
+    The login form submits to a server function that calls Zitadel's Session API v2 to create an authenticated session. On success, Zitadel returns session tokens.
+  </Step>
+  <Step title="Session cookie is set">
+    The server stores the session data in Redis via `tower-sessions` and sets a signed session cookie. The cookie is HTTP-only and secure in production.
+  </Step>
+  <Step title="Client receives auth state">
+    After login, the client fetches `/api/me` which returns the user's `LoggedInData`. The `UserAuthState` context updates to `Authenticated`, unlocking dashboard routes.
+  </Step>
+</Steps>
+
+## Key Components
+
+### Server Side
+
+The `auth` crate defines two traits that the main app implements:
+
+```rust
+// AuthUserStore — find or create users in your database
+#[async_trait]
+pub trait AuthUserStore: Send + Sync {
+    async fn find_or_create_user(&self, sub: &str, email: &str)
+        -> Result<(), AuthError>;
+}
+
+// AuthEmailSender — send verification/magic link emails
+#[async_trait]
+pub trait AuthEmailSender: Send + Sync {
+    async fn send_verification_email(&self, email: &str, code: &str)
+        -> Result<(), AuthError>;
+}
+```
+
+### UserSession Extractor
+
+Server functions can require authentication by adding a `session` parameter:
+
+```rust
+#[post("/api/me", session: auth::UserSession)]
+async fn get_login_data() -> Result<Option<LoggedInData>, ServerFnError> {
+    Ok(session.data().ok().map(LoggedInData::from))
+}
+```
+
+The `UserSession` extractor reads the session from the cookie. If the session is missing or invalid, the server function returns an error.
+
+### Client Side
+
+The `App` component provides auth state via context:
+
+```rust
+#[derive(Clone, Debug, PartialEq)]
+pub enum UserAuthState {
+    Loading,
+    Authenticated(LoggedInData),
+    NotAuthenticated,
+}
+```
+
+A `use_server_future` fetches `/api/me` on load. The `UserDataRefreshTrigger` signal allows any component to trigger a re-fetch (e.g., after login or profile update).
+
+## Protected Routes
+
+The `DashboardShell` layout checks `UserAuthState` and redirects unauthenticated users to `/login`:
+
+```rust
+#[component]
+pub fn DashboardShell() -> Element {
+    let user_auth = use_context::<Signal<UserAuthState>>();
+    let nav = use_navigator();
+
+    use_effect(move || {
+        if let UserAuthState::NotAuthenticated = &*user_auth.read() {
+            nav.push(Route::LoginPage {
+                redirect_url: "/dashboard".to_string(),
+            });
+        }
+    });
+
+    // ... render dashboard layout
+}
+```
+
+## Configuration
+
+Set these environment variables for Zitadel:
+
+| Variable | Description |
+| --- | --- |
+| `ZITADEL_DOMAIN` | Your Zitadel instance domain |
+| `ZITADEL_ORG_ID` | Organization ID |
+| `ZITADEL_SERVICE_USER_TOKEN` | Service account PAT with Session API permissions |
+
+<Warning>
+The service user token needs the `ORG_OWNER` or appropriate IAM roles to create and manage sessions via the Session API v2.
+</Warning>

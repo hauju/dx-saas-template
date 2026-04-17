@@ -1,0 +1,13 @@
+[package]
+name = "crypto"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "Cryptographic utilities - secure random generation, hashing, and token management"
+
+[dependencies]
+thiserror = { workspace = true }
+rand = "0.8.5"
+base64 = "0.22"
+argon2 = "0.5"
+aes-gcm = "0.10"
