@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 
-use crate::routes::Route;
 use crate::HEADER_SVG;
+use crate::routes::Route;
 
 /// Landing page.
 #[component]

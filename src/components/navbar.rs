@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 
-use crate::routes::Route;
 use crate::UserAuthState;
+use crate::routes::Route;
 
 /// Public navbar with login/signup buttons.
 #[component]

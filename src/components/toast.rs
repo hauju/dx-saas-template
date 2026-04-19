@@ -1,10 +1,12 @@
+#![allow(dead_code)]
+//! Toast notifications — template hook ready for downstream features.
+
 use std::collections::HashMap;
 
 use dioxus::prelude::*;
 
 /// Toast severity level, mapped to DaisyUI alert classes.
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[allow(dead_code)]
 pub enum ToastLevel {
     Info,
     Success,

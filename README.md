@@ -1,44 +1,112 @@
-# Development
+# dx-saas-template
 
-Your new bare-bones project includes minimal organization with a single `main.rs` file and a few assets.
+A production-ready fullstack **Dioxus 0.7** SaaS template in Rust. One codebase compiles into a
+WASM client and an Axum server; auth, sessions, billing, email, and docs are pre-wired.
+
+## Stack
+
+| Layer           | Choice                                                                  |
+| --------------- | ----------------------------------------------------------------------- |
+| UI framework    | [Dioxus 0.7](https://dioxuslabs.com) (fullstack, SSR + WASM hydration)  |
+| Styling         | TailwindCSS 4 + DaisyUI 5 (dark theme), Lucide icons                    |
+| Server          | Axum 0.8, tower-sessions (Redis-backed)                                 |
+| Database        | MongoDB 3.x (replica set for transactions)                              |
+| Sessions cache  | Redis / Valkey                                                          |
+| Auth            | Zitadel OIDC + Session API v2 (passkey-ready)                           |
+| Billing         | [Polar.sh](https://polar.sh) — customers, subscriptions, webhooks       |
+| Email           | SMTP via `lettre` (async pool); [Mailpit](https://mailpit.axllent.org) for local dev |
+| Object storage  | S3-compatible (`crates/storage`) — ready to wire                        |
+| Docs site       | [dioxus-docs-kit](https://crates.io/crates/dioxus-docs-kit) v0.4 at `/docs` |
+| Error tracking  | Sentry (optional, feature-gated)                                        |
+
+## Layout
 
 ```
-project/
-├─ assets/ # Any assets that are used by the app should be placed here
-├─ src/
-│  ├─ main.rs # main.rs is the entry point to your application and currently contains all components for the app
-├─ Cargo.toml # The Cargo.toml file defines the dependencies and feature flags for your project
+.
+├── Cargo.toml            # Workspace root
+├── src/                  # App binary (dual entry: server + WASM client)
+│   ├── main.rs           # Axum server + Dioxus launch
+│   ├── routes.rs         # Route enum + layouts
+│   ├── pages/            # Home, Login, Dashboard, Settings, Docs
+│   ├── components/       # Navbar, DashboardShell, ToastProvider
+│   ├── models/           # Shared types (UserEntity, AppError)
+│   └── server/           # Server-only: AppState, Config, DB, auth-store impl
+├── crates/
+│   ├── auth/             # Zitadel OIDC + Session API v2, CSRF, rate-limiting
+│   ├── crypto/           # Argon2 hashing, AES-256-GCM, token generation
+│   ├── smtp/             # lettre async/sync pools
+│   ├── polar/            # Polar.sh billing API + webhook verification
+│   └── storage/          # S3-compatible storage (AWS, MinIO, R2, Spaces)
+├── docs/                 # MDX docs, embedded at compile time via dioxus-docs-kit
+├── docker-compose.yml    # MongoDB (replica set) + Redis + Mailpit
+└── Dockerfile            # Two-stage production build
 ```
 
-### Automatic Tailwind (Dioxus 0.7+)
+## Quickstart
 
-As of Dioxus 0.7, there no longer is a need to manually install tailwind. Simply `dx serve` and you're good to go!
+### Prerequisites
 
-Automatic tailwind is supported by checking for a file called `tailwind.css` in your app's manifest directory (next to Cargo.toml). To customize the file, use the dioxus.toml:
+- Rust 1.94 (pinned via `rust-toolchain.toml`)
+- [Dioxus CLI](https://dioxuslabs.com): `curl -sSL https://dioxus.dev/install.sh | sh`
+- [Bun](https://bun.sh) for Tailwind
+- Docker (for Mongo, Redis, Mailpit)
+- [`just`](https://github.com/casey/just) (optional, for shortcuts)
 
-```toml
-[application]
-tailwind_input = "my.css"
-tailwind_output = "assets/out.css" # also customize the location of the out file!
+### Run it
+
+```sh
+# 1. Start infra (Mongo replica set, Redis, Mailpit)
+docker compose up -d
+# or: just init
+
+# 2. Bootstrap .env with a fresh SESSION_SECRET
+just bootstrap
+
+# 3. Install node deps (for Tailwind)
+bun install
+
+# 4. Run the dev server (auto-reloads on save)
+dx serve --addr 0.0.0.0
+# or: just serve
 ```
 
-### Tailwind Manual Install
+App runs on <http://localhost:8080>. Docs at `/docs`, Mailpit UI at <http://localhost:8025>.
 
-To use tailwind plugins or manually customize tailwind, you can can install the Tailwind CLI and use it directly.
+## Feature flags
 
-### Tailwind
-1. Install npm: https://docs.npmjs.com/downloading-and-installing-node-js-and-npm
-2. Install the Tailwind CSS CLI: https://tailwindcss.com/docs/installation/tailwind-cli
-3. Run the following command in the root of the project to start the Tailwind CSS compiler:
+The binary compiles in two modes from the same crate:
 
-```bash
-npx @tailwindcss/cli -i ./input.css -o ./assets/tailwind.css --watch
+- `--features web` (default) → WASM client
+- `--features server` → Axum server with MongoDB, Redis, auth, billing, email
+- `--features sentry` → enables Sentry error tracking (requires `SENTRY_DSN`)
+
+`dx serve` and `dx build` handle these transparently.
+
+## CI gates
+
+Local parity with GitHub Actions:
+
+```sh
+bun install --frozen-lockfile
+bunx @tailwindcss/cli -i tailwind.css -o assets/tailwind.css  # required for clippy
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo machete
+cargo test --workspace --exclude dx-saas-template
 ```
 
-### Serving Your App
+## Using this template
 
-Run the following command in the root of your project to start developing with the default platform:
+Clone the repo, then rename the project:
 
-```bash
-dx serve --platform web
+```sh
+# Updates package name, DB name, tracing filter, and Dockerfile binary path.
+just rename my-new-project
 ```
+
+Then update `repository` in `Cargo.toml`, wire Zitadel + Polar credentials in `.env`,
+and replace `LICENSE` with your own if needed.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

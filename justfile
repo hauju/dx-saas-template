@@ -17,3 +17,39 @@ serve:
 
 tw:
     bunx @tailwindcss/cli -i tailwind.css -o ./assets/tailwind.css
+
+# Copy .env.example -> .env and fill in a freshly generated SESSION_SECRET.
+bootstrap:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -f .env ]]; then
+        echo ".env already exists; refusing to overwrite."
+        exit 1
+    fi
+    cp .env.example .env
+    SECRET=$(openssl rand -hex 64)
+    perl -i -pe "s/^SESSION_SECRET=\$/SESSION_SECRET=$SECRET/" .env
+    echo "Wrote .env with a fresh SESSION_SECRET."
+
+# Rename the template project. Pass a kebab-case name, e.g. `just rename my-app`.
+# Updates package name, MongoDB db name, tracing filter, Dockerfile binary path, and docs.
+rename new-name:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    KEBAB="{{new-name}}"
+    SNAKE="${KEBAB//-/_}"
+    if [[ "$KEBAB" == "dx-saas-template" ]]; then
+        echo "Name unchanged; aborting."
+        exit 1
+    fi
+    if ! [[ "$KEBAB" =~ ^[a-z][a-z0-9-]*$ ]]; then
+        echo "Invalid name: use lowercase letters, digits, and hyphens only."
+        exit 1
+    fi
+    git ls-files \
+        | grep -vE '^(Cargo\.lock|bun\.lock|LICENSE|justfile|assets/.*)$' \
+        | while read -r f; do
+            perl -i -pe "s/dx_saas_template/$SNAKE/g; s/dx-saas-template/$KEBAB/g; s/\\bdx_saas\\b/$SNAKE/g" "$f"
+        done
+    echo "Renamed dx-saas-template -> $KEBAB (snake: $SNAKE)."
+    echo "Run 'cargo build' to regenerate Cargo.lock."

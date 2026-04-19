@@ -37,31 +37,62 @@ async fn main() {
     use tower_http::compression::CompressionLayer;
     use tower_sessions::cookie::time::Duration;
     use tower_sessions::{Expiry, SessionManagerLayer};
-    use tower_sessions_redis_store::fred::prelude::*;
     use tower_sessions_redis_store::RedisStore;
+    use tower_sessions_redis_store::fred::prelude::*;
 
     use server::auth_store::{AppAuthUserStore, AppEmailSender};
     use server::state::AppState;
+
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
 
     // Install rustls crypto provider before any TLS operations
     rustls::crypto::ring::default_provider()
         .install_default()
         .expect("Failed to install rustls crypto provider");
 
-    tracing_subscriber::fmt()
-        .with_env_filter(
+    // Initialize Sentry before the tracing subscriber so the tracing layer can forward events.
+    #[cfg(feature = "sentry")]
+    let _sentry_guard = sentry::init((
+        std::env::var("SENTRY_DSN").ok(),
+        sentry::ClientOptions {
+            release: sentry::release_name!(),
+            environment: std::env::var("ENVIRONMENT")
+                .ok()
+                .map(std::borrow::Cow::from),
+            ..Default::default()
+        },
+    ));
+
+    let registry = tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_target(true)
+                .with_level(true),
+        )
+        .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "info,dx_saas_template=debug".parse().unwrap()),
-        )
-        .init();
+        );
+
+    #[cfg(feature = "sentry")]
+    let registry = registry.with(
+        sentry::integrations::tracing::layer().event_filter(|metadata| match *metadata.level() {
+            tracing::Level::ERROR => sentry::integrations::tracing::EventFilter::Event,
+            _ => sentry::integrations::tracing::EventFilter::Breadcrumb,
+        }),
+    );
+
+    registry.init();
 
     // Initialize AppState (loads config, connects to DB)
-    let app_state = AppState::init().await.expect("Failed to initialize AppState");
+    let app_state = AppState::init()
+        .await
+        .expect("Failed to initialize AppState");
     tracing::info!("AppState initialized");
 
     // Redis session store
-    let redis_config =
-        Config::from_url(&app_state.config.redis_url).expect("Invalid REDIS_URL");
+    let redis_config = Config::from_url(&app_state.config.redis_url).expect("Invalid REDIS_URL");
     let redis_pool = Pool::new(redis_config, None, None, None, 4).expect("Redis pool error");
     redis_pool.init().await.expect("Failed to connect to Redis");
     let redis_store = RedisStore::new(redis_pool);
@@ -70,7 +101,10 @@ async fn main() {
     let session_layer = SessionManagerLayer::new(redis_store)
         .with_secure(app_state.config.secure_cookies)
         .with_expiry(Expiry::OnInactivity(Duration::hours(24)))
-        .with_signed(tower_sessions::cookie::Key::try_from(app_state.secrets.session_secret.as_slice()).expect("Invalid session secret"));
+        .with_signed(
+            tower_sessions::cookie::Key::try_from(app_state.secrets.session_secret.as_slice())
+                .expect("Invalid session secret"),
+        );
 
     // Auth router
     let auth_config = auth::AuthConfig {
@@ -78,10 +112,7 @@ async fn main() {
         default_post_login_url: "/dashboard".to_string(),
         zitadel_domain: app_state.config.zitadel_domain.clone(),
         zitadel_org_id: app_state.config.zitadel_org_id.clone(),
-        zitadel_service_user_token: app_state
-            .secrets
-            .zitadel_service_user_token
-            .clone(),
+        zitadel_service_user_token: app_state.secrets.zitadel_service_user_token.clone(),
         base_url: app_state.config.base_url.clone(),
     };
 
@@ -103,8 +134,12 @@ async fn main() {
 
     tracing::info!("Listening on {address}");
 
-    let listener = tokio::net::TcpListener::bind(address).await.expect("Failed to bind TCP listener");
-    axum::serve(listener, router.into_make_service()).await.expect("Server error");
+    let listener = tokio::net::TcpListener::bind(address)
+        .await
+        .expect("Failed to bind TCP listener");
+    axum::serve(listener, router.into_make_service())
+        .await
+        .expect("Server error");
 }
 
 // ============================================================================
@@ -137,16 +172,14 @@ fn App() -> Element {
     })?;
 
     // Update auth state from resource result
-    use_effect(move || {
-        match user_data() {
-            Some(Ok(Some(data))) => {
-                user_auth.set(UserAuthState::Authenticated(data));
-            }
-            Some(Ok(None)) | Some(Err(_)) => {
-                user_auth.set(UserAuthState::NotAuthenticated);
-            }
-            None => {}
+    use_effect(move || match user_data() {
+        Some(Ok(Some(data))) => {
+            user_auth.set(UserAuthState::Authenticated(data));
         }
+        Some(Ok(None)) | Some(Err(_)) => {
+            user_auth.set(UserAuthState::NotAuthenticated);
+        }
+        None => {}
     });
 
     rsx! {

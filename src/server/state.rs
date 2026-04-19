@@ -39,6 +39,7 @@ impl AppState {
 
     /// Get a reference to the global AppState.
     /// Panics if `init()` was not called.
+    #[allow(dead_code)]
     pub fn global() -> &'static Self {
         APP_STATE.get().expect("AppState not initialized")
     }

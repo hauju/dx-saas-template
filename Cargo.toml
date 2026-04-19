@@ -1,8 +1,12 @@
 [package]
 name = "dx-saas-template"
+description = "Fullstack Dioxus 0.7 SaaS template with Zitadel auth, MongoDB, Redis sessions, Polar billing, and embedded docs."
+readme = "README.md"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [workspace]
 members = ["crates/*"]
@@ -11,6 +15,8 @@ members = ["crates/*"]
 version = "0.1.0"
 edition = "2024"
 authors = ["Hauke Jung <hauke.jung@outlook.de>"]
+license = "MIT"
+repository = "https://github.com/haukejung/dx-saas-template"
 
 [workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -21,7 +27,7 @@ chrono = { version = "0.4", features = ["serde"] }
 
 [dependencies]
 # Framework
-dioxus = { version = "0.7.3", features = ["router", "fullstack"] }
+dioxus = { version = "0.7.4", features = ["router", "fullstack"] }
 
 # Serialization
 serde = { workspace = true }
@@ -36,6 +42,7 @@ tracing-subscriber = { version = "0.3.2", default-features = false, features = [
     "env-filter",
     "fmt",
     "json",
+    "registry",
 ] }
 
 # Async
@@ -48,7 +55,7 @@ chrono = { workspace = true }
 dioxus-free-icons = { version = "0.10.0", features = ["lucide"] }
 
 # Documentation
-dioxus-docs-kit = { version = "0.3", default-features = false }
+dioxus-docs-kit = { version = "0.4.1", default-features = false }
 
 # Workspace crates
 auth = { path = "crates/auth", optional = true }
@@ -69,6 +76,9 @@ secrecy = { version = "0.10", optional = true }
 hex = { version = "0.4", optional = true }
 async-trait = { version = "0.1", optional = true }
 rustls = { version = "0.23", default-features = false, features = ["ring"], optional = true }
+
+# Optional observability
+sentry = { version = "0.47", features = ["tower", "panic", "tracing"], optional = true }
 
 # Web dependencies
 gloo-timers = { version = "0.3.0", features = ["futures"], optional = true }
@@ -96,6 +106,7 @@ server = [
     "dep:polar",
     "dep:rustls",
 ]
+sentry = ["server", "dep:sentry"]
 
 [build-dependencies]
-dioxus-docs-kit-build = "0.3"
+dioxus-docs-kit-build = "0.4.0"

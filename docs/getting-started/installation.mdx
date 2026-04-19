@@ -22,15 +22,16 @@ Make sure you have the following installed:
     cd dx-saas-template
     ```
   </Step>
-  <Step title="Copy environment variables">
+  <Step title="Bootstrap your env file">
     ```bash
-    cp .env.example .env
+    just bootstrap
     ```
 
-    Edit `.env` with your configuration. Key variables:
+    This copies `.env.example` to `.env` and generates a fresh `SESSION_SECRET` for you.
+
+    Then edit `.env` to set the rest:
     - `DATABASE_URL` — MongoDB connection string (default: `mongodb://localhost:27017`)
     - `REDIS_URL` — Redis connection string (default: `redis://localhost:6379`)
-    - `SESSION_SECRET` — Hex-encoded secret, at least 64 bytes
     - `ZITADEL_DOMAIN` — Your Zitadel instance domain
     - `BASE_URL` — Your app's base URL (default: `http://localhost:8080`)
   </Step>
@@ -91,13 +92,28 @@ The `dx serve` command automatically compiles Tailwind CSS. You only need to run
   <Accordion title="Email (SMTP)">
     - `SMTP_HOST` — SMTP server host
     - `SMTP_PORT` — SMTP port (default: `1025` for Mailpit)
-    - `SMTP_USERNAME` — SMTP username (optional for Mailpit)
+    - `SMTP_USER` — SMTP username (optional for Mailpit)
     - `SMTP_PASSWORD` — SMTP password (optional for Mailpit)
     - `SMTP_FROM` — Sender email address
   </Accordion>
   <Accordion title="Billing (Polar)">
     - `POLAR_ACCESS_TOKEN` — Polar API access token
     - `POLAR_WEBHOOK_SECRET` — Webhook verification secret
-    - `POLAR_ORGANIZATION_ID` — Your Polar organization ID
+  </Accordion>
+  <Accordion title="Sentry (optional)">
+    Requires building with `--features sentry`.
+
+    - `SENTRY_DSN` — Sentry project DSN
+    - `ENVIRONMENT` — environment tag (e.g., `development`, `production`)
   </Accordion>
 </AccordionGroup>
+
+## Renaming the project
+
+After cloning, give the project its own name:
+
+```bash
+just rename my-new-project
+```
+
+This rewrites the package name, MongoDB database name, tracing filter, Dockerfile binary path, and docs in one shot. Run `cargo build` afterwards to regenerate `Cargo.lock`.

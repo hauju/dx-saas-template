@@ -77,7 +77,7 @@ All crates are decoupled from the main app via traits and config structs:
 
 ### Documentation Site (`dioxus-docs-kit`)
 
-The `/docs` route serves a documentation site powered by `dioxus-docs-kit` v0.3. Content is written in MDX files under `docs/` and embedded at compile time.
+The `/docs` route serves a documentation site powered by `dioxus-docs-kit` v0.4. Content is written in MDX files under `docs/` and embedded at compile time.
 
 - **`build.rs`** — Calls `dioxus_docs_kit_build::generate_content_map("docs/_nav.json")` to generate the content map macro.
 - **`docs/_nav.json`** — Navigation structure (tabs, groups, pages). Pages reference MDX file paths without the `.mdx` extension.
@@ -110,7 +110,7 @@ The `Dockerfile` builds a two-stage image: compiles with `dx build --release --p
 
 ### Environment Variables
 
-Copy `.env.example` to `.env`. Key variables: `DATABASE_URL`, `REDIS_URL`, `BASE_URL`, `SESSION_SECRET` (hex, 64+ bytes), `ZITADEL_DOMAIN`, SMTP settings, optional Polar billing keys.
+Copy `.env.example` to `.env`. Key variables: `DATABASE_URL`, `REDIS_URL`, `BASE_URL`, `SESSION_SECRET` (hex, 64+ bytes), `ZITADEL_DOMAIN`, SMTP settings, optional Polar billing keys, optional `SENTRY_DSN` + `ENVIRONMENT` (requires `--features sentry`).
 
 ### Styling
 

@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
-use http::header::CONTENT_DISPOSITION;
 use http::HeaderMap;
+use http::header::CONTENT_DISPOSITION;
 use serde::{Deserialize, Serialize};
 
 use crate::client::StorageClient;
@@ -181,10 +181,7 @@ impl StorageClient {
     /// # Returns
     /// * `true` if the file exists, `false` otherwise
     pub async fn file_exists(&self, key: &str) -> bool {
-        self.bucket()
-            .head_object(key)
-            .await
-            .is_ok()
+        self.bucket().head_object(key).await.is_ok()
     }
 }
 

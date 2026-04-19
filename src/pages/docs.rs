@@ -3,8 +3,8 @@ use dioxus_docs_kit::{
     DocsConfig, DocsContext, DocsLayout, DocsPageContent, DocsRegistry, SearchButton,
     use_docs_providers,
 };
-use dioxus_free_icons::icons::ld_icons::LdMenu;
 use dioxus_free_icons::Icon;
+use dioxus_free_icons::icons::ld_icons::LdMenu;
 use std::sync::LazyLock;
 
 use crate::routes::Route;

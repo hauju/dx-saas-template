@@ -11,16 +11,16 @@ pub struct Database {
 
 impl Database {
     pub async fn new(db_url: &str) -> Result<Self, AppError> {
-        let client = Client::with_uri_str(db_url).await.map_err(|e| {
-            AppError::Internal(format!("Failed to connect to MongoDB: {e}"))
-        })?;
+        let client = Client::with_uri_str(db_url)
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to connect to MongoDB: {e}")))?;
 
         let db = client.database("dx_saas");
 
         // Ping to verify connection
-        db.run_command(bson::doc! { "ping": 1 }).await.map_err(|e| {
-            AppError::Internal(format!("Failed to ping MongoDB: {e}"))
-        })?;
+        db.run_command(bson::doc! { "ping": 1 })
+            .await
+            .map_err(|e| AppError::Internal(format!("Failed to ping MongoDB: {e}")))?;
 
         tracing::info!("Connected to database successfully");
 

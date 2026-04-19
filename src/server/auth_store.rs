@@ -1,7 +1,7 @@
-use auth::{AuthEmailSender, AuthError, AuthResult, AuthUserStore};
-use auth::types::{AuthTosAcceptance, AuthUser, NewAuthUser};
 use crate::models::user::UserEntity;
 use crate::server::state::AppState;
+use auth::types::{AuthTosAcceptance, AuthUser, NewAuthUser};
+use auth::{AuthEmailSender, AuthError, AuthResult, AuthUserStore};
 
 /// Implements `AuthUserStore` by reading/writing to MongoDB.
 pub struct AppAuthUserStore {
@@ -133,8 +133,9 @@ impl AuthEmailSender for AppEmailSender {
             insecure: config.smtp_insecure,
         };
 
-        let client = smtp::AsyncSmtpClientImpl::new(smtp_config)
-            .map_err(|e| AuthError::ServerStateError(format!("Failed to create SMTP client: {e}")))?;
+        let client = smtp::AsyncSmtpClientImpl::new(smtp_config).map_err(|e| {
+            AuthError::ServerStateError(format!("Failed to create SMTP client: {e}"))
+        })?;
 
         let to_mailbox: smtp::Mailbox = to_email
             .parse()

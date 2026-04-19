@@ -488,20 +488,14 @@ mod tests {
         fn case_sensitive_uppercase_returns_unknown() {
             // Status should be exact match
             let result = parse_polar_status("ACTIVE");
-            assert_eq!(
-                result,
-                SubscriptionState::Unknown("ACTIVE".to_string())
-            );
+            assert_eq!(result, SubscriptionState::Unknown("ACTIVE".to_string()));
         }
 
         #[test]
         fn suspended_returns_unknown() {
             // Polar might send other statuses not explicitly handled
             let result = parse_polar_status("suspended");
-            assert_eq!(
-                result,
-                SubscriptionState::Unknown("suspended".to_string())
-            );
+            assert_eq!(result, SubscriptionState::Unknown("suspended".to_string()));
         }
     }
 }

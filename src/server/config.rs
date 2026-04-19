@@ -44,7 +44,11 @@ impl Config {
 }
 
 /// Sensitive secrets loaded from environment variables.
+///
+/// Some fields are loaded but not yet read by the template binary itself —
+/// they're placeholders ready to wire into downstream features.
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct Secrets {
     pub session_secret: Vec<u8>,
     pub encryption_key: Option<[u8; 32]>,
@@ -68,9 +72,8 @@ impl Secrets {
         let _ = dotenvy::dotenv();
 
         let session_secret_hex = get_env("SESSION_SECRET")?;
-        let session_secret = hex::decode(&session_secret_hex).map_err(|e| {
-            AppError::Internal(format!("SESSION_SECRET must be valid hex: {e}"))
-        })?;
+        let session_secret = hex::decode(&session_secret_hex)
+            .map_err(|e| AppError::Internal(format!("SESSION_SECRET must be valid hex: {e}")))?;
 
         if session_secret.len() < 64 {
             return Err(AppError::Internal(
@@ -102,8 +105,7 @@ impl Secrets {
 }
 
 fn get_env(key: &str) -> Result<String, AppError> {
-    std::env::var(key)
-        .map_err(|_| AppError::Internal(format!("Missing required env var: {key}")))
+    std::env::var(key).map_err(|_| AppError::Internal(format!("Missing required env var: {key}")))
 }
 
 fn get_env_optional(key: &str) -> Option<String> {

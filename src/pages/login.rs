@@ -3,8 +3,8 @@ use dioxus::prelude::*;
 #[cfg(feature = "web")]
 use auth::UserDataRefreshTrigger;
 
-use crate::routes::Route;
 use crate::UserAuthState;
+use crate::routes::Route;
 
 /// Login page that wraps the auth crate's LoginPage component.
 #[component]

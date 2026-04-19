@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 
-use crate::routes::Route;
 use crate::UserAuthState;
+use crate::routes::Route;
 
 /// Auth-gated dashboard layout with sidebar navigation.
 /// Redirects to login when user is not authenticated.

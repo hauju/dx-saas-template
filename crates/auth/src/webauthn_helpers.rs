@@ -78,15 +78,12 @@ pub async fn browser_get_passkey(request_options_json: &str) -> Result<serde_jso
         "#
     );
 
-    let promise = js_sys::eval(&js_code)
-        .map_err(|e| format!("JS eval error: {:?}", e))?;
+    let promise = js_sys::eval(&js_code).map_err(|e| format!("JS eval error: {:?}", e))?;
     let promise = js_sys::Promise::from(promise);
 
     match JsFuture::from(promise).await {
         Ok(val) => {
-            let json_str = val
-                .as_string()
-                .ok_or("Passkey result was not a string")?;
+            let json_str = val.as_string().ok_or("Passkey result was not a string")?;
             serde_json::from_str(&json_str)
                 .map_err(|_| "Failed to parse passkey response".to_string())
         }
@@ -180,15 +177,12 @@ pub async fn browser_create_passkey(
         "#
     );
 
-    let promise = js_sys::eval(&js_code)
-        .map_err(|e| format!("Passkey setup failed: {:?}", e))?;
+    let promise = js_sys::eval(&js_code).map_err(|e| format!("Passkey setup failed: {:?}", e))?;
     let promise = js_sys::Promise::from(promise);
 
     match JsFuture::from(promise).await {
         Ok(val) => {
-            let json_str = val
-                .as_string()
-                .ok_or("Passkey result was not a string")?;
+            let json_str = val.as_string().ok_or("Passkey result was not a string")?;
             serde_json::from_str(&json_str)
                 .map_err(|_| "Failed to parse passkey response".to_string())
         }

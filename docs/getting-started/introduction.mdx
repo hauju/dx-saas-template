@@ -53,8 +53,13 @@ crates/
 ├── auth/            # Zitadel OIDC + session management
 ├── crypto/          # Argon2, AES-256-GCM, token generation
 ├── smtp/            # Email sending via lettre
-└── polar/           # Polar.sh billing API
+├── polar/           # Polar.sh billing API
+└── storage/         # S3-compatible object storage (AWS, MinIO, R2, Spaces)
 ```
+
+## Optional features
+
+- `--features sentry` enables [Sentry](https://sentry.io) error tracking and tracing breadcrumbs (requires `SENTRY_DSN`).
 
 ## Next Steps
 
