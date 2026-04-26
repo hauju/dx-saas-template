@@ -2,7 +2,7 @@
 @plugin "@tailwindcss/typography";
 
 @plugin "daisyui" {
-    themes: dark --default;
+    themes: dark --default, light;
 }
 
 @source "./src/**/*.{rs,html,css}";

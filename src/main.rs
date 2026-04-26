@@ -16,6 +16,24 @@ pub const MAIN_CSS: Asset = asset!("/assets/main.css");
 pub const HEADER_SVG: Asset = asset!("/assets/header.svg");
 pub const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
 
+/// Inline JS that sets `data-theme` on `<html>` from `prefers-color-scheme`
+/// **before** first paint. Without this, SSR ships HTML with no `data-theme`,
+/// DaisyUI uses its default, and any `use_effect`-based correction runs after
+/// hydration, causing a theme flash.
+const THEME_BOOTSTRAP_JS: &str = r#"
+(function () {
+    var root = document.documentElement;
+    var apply = function (dark) {
+        root.setAttribute('data-theme', dark ? 'dark' : 'light');
+        root.setAttribute('data-color-mode', dark ? 'dark' : 'light');
+        root.style.colorScheme = dark ? 'dark' : 'light';
+    };
+    var mql = window.matchMedia('(prefers-color-scheme: dark)');
+    apply(mql.matches);
+    mql.addEventListener('change', function (e) { apply(e.matches); });
+})();
+"#;
+
 /// Client-side authentication state.
 #[derive(Clone, Debug, PartialEq)]
 pub enum UserAuthState {
@@ -186,6 +204,7 @@ fn App() -> Element {
         document::Link { rel: "icon", href: FAVICON }
         document::Link { rel: "stylesheet", href: MAIN_CSS }
         document::Link { rel: "stylesheet", href: TAILWIND_CSS }
+        document::Script { {THEME_BOOTSTRAP_JS} }
         Router::<routes::Route> {}
         ToastProvider {}
     }

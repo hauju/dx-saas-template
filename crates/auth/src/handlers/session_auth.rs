@@ -203,7 +203,7 @@ pub async fn start_session(
 
     info!("start_session: org_id={:?}, email={}", org_id, email);
 
-    if !email.contains('@') || email.len() < 5 {
+    if !shared::is_valid_email(&email) {
         return Err(AuthError::BadRequest("Invalid email address".to_string()));
     }
 

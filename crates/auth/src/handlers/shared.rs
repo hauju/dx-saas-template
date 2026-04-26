@@ -27,6 +27,94 @@ pub(crate) fn is_safe_redirect_url(url: &str) -> bool {
     url.starts_with('/') && !url.starts_with("//")
 }
 
+/// Quick email-format check. Returns `true` for plausibly-deliverable addresses.
+///
+/// Catches the common garbage we've seen hit downstream mailers: missing/multiple
+/// `@`, empty or over-long parts, consecutive dots, leading/trailing dots, and
+/// domains with no TLD. This is intentionally a shape check — not an RFC 5321
+/// parser — just enough to reject input before we spend cycles on CAPTCHA, OTP
+/// generation, and SMTP.
+pub fn is_valid_email(email: &str) -> bool {
+    if email.len() < 3 || email.len() > 320 {
+        return false;
+    }
+
+    let Some((local, domain)) = email.split_once('@') else {
+        return false;
+    };
+
+    if domain.contains('@') {
+        return false;
+    }
+
+    if local.is_empty() || local.len() > 64 {
+        return false;
+    }
+    if domain.is_empty() || domain.len() > 255 {
+        return false;
+    }
+
+    if local.starts_with('.') || local.ends_with('.') || local.contains("..") {
+        return false;
+    }
+    if domain.starts_with('.') || domain.ends_with('.') || domain.contains("..") {
+        return false;
+    }
+
+    if !domain.contains('.') {
+        return false;
+    }
+
+    let local_ok = local.bytes().all(|b| {
+        b.is_ascii_alphanumeric() || b".!#$%&'*+/=?^_`{|}~-.".contains(&b)
+    });
+    if !local_ok {
+        return false;
+    }
+
+    let domain_ok = domain
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.');
+    if !domain_ok {
+        return false;
+    }
+
+    domain
+        .split('.')
+        .all(|label| !label.is_empty() && !label.starts_with('-') && !label.ends_with('-'))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_valid_email;
+
+    #[test]
+    fn accepts_normal_emails() {
+        assert!(is_valid_email("user@example.com"));
+        assert!(is_valid_email("a.b.c@sub.example.co.uk"));
+        assert!(is_valid_email("user+tag@example.com"));
+    }
+
+    #[test]
+    fn rejects_consecutive_dots() {
+        assert!(!is_valid_email("q.u.i.n.t.on..kellam@gmail.com"));
+        assert!(!is_valid_email("a..b@example.com"));
+        assert!(!is_valid_email("a@example..com"));
+    }
+
+    #[test]
+    fn rejects_malformed() {
+        assert!(!is_valid_email(""));
+        assert!(!is_valid_email("no-at-sign"));
+        assert!(!is_valid_email("two@at@signs.com"));
+        assert!(!is_valid_email(".leading@example.com"));
+        assert!(!is_valid_email("trailing.@example.com"));
+        assert!(!is_valid_email("user@nodotdomain"));
+        assert!(!is_valid_email("user@-bad.com"));
+        assert!(!is_valid_email("user@bad-.com"));
+    }
+}
+
 /// Look up user by sub or email, migrate sub if needed, create if new.
 /// Shared between OIDC callback and Session API login flows.
 pub async fn lookup_or_create_user(
