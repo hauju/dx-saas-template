@@ -3,6 +3,21 @@
 A production-ready fullstack **Dioxus 0.7** SaaS template in Rust. One codebase compiles into a
 WASM client and an Axum server; auth, sessions, billing, email, and docs are pre-wired.
 
+- 🦀 Rust + Axum + Dioxus
+- 💾 MongoDB
+- 🔐 Zitadel (auth)
+- 📧 Scaleway (email)
+- 💳 Polar (billing)
+- 🐳 Coolify (server)
+
+Self-hosted. EU-hosted. GDPR-first.
+
+## Used in production by
+
+- [seggwat.com](https://seggwat.com)
+- [infra.page](https://infra.page)
+- [stepshots.com](https://stepshots.com)
+
 ## Stack
 
 | Layer           | Choice                                                                  |
