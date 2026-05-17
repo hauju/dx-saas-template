@@ -15,9 +15,10 @@ use crate::state::AuthState;
 /// - `POST /auth/logout` — Logout handler
 /// - `POST /auth/session/start` — Start a session (auto-detects passkey or OTP)
 /// - `POST /auth/session/passkey/verify` — Verify passkey assertion
-/// - `POST /auth/session/passkey-fallback-otp` — Fall back to OTP when passkey fails
 /// - `POST /auth/session/otp/verify` — Verify email OTP
 /// - `POST /auth/session/otp/resend` — Resend OTP code
+/// - `POST /auth/session/captcha/verify` — Verify CAPTCHA for new user registration
+/// - `POST /auth/session/captcha/refresh` — Generate a new CAPTCHA image
 /// - `POST /auth/session/accept-tos` — Accept Terms of Service
 ///
 /// Security middleware included:
@@ -38,16 +39,24 @@ pub fn auth_router(auth_config: AuthConfig, auth_state: AuthState) -> Router {
             post(handlers::verify_passkey_handler),
         )
         .route(
-            "/auth/session/passkey-fallback-otp",
-            post(handlers::passkey_fallback_to_otp),
-        )
-        .route(
             "/auth/session/otp/verify",
             post(handlers::verify_otp_handler),
         )
         .route(
             "/auth/session/otp/resend",
             post(handlers::resend_otp_handler),
+        )
+        .route(
+            "/auth/session/password/verify",
+            post(handlers::verify_password_handler),
+        )
+        .route(
+            "/auth/session/captcha/verify",
+            post(handlers::verify_captcha_handler),
+        )
+        .route(
+            "/auth/session/captcha/refresh",
+            post(handlers::refresh_captcha_handler),
         )
         .route(
             "/auth/session/accept-tos",

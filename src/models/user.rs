@@ -10,7 +10,7 @@ pub struct UserEntity {
     #[serde(rename = "_id")]
     pub id: ObjectId,
 
-    /// OIDC subject identifier (from Zitadel)
+    /// OIDC subject identifier (from FerrisKey)
     pub sub: String,
 
     /// User email address

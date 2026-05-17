@@ -1,31 +1,38 @@
 ---
 title: Authentication
-description: How OIDC authentication works with Zitadel in the DX SaaS Template
+description: How OIDC authentication works with FerrisKey in the DX SaaS Template
 sidebarTitle: Authentication
 ---
 
 ## Overview
 
-The template uses **Zitadel** as the identity provider, integrated via OIDC and the Session API v2. Authentication is session-based using `tower-sessions` with Redis as the session store.
+The template uses **[FerrisKey](https://ferriskey.dev)** as the identity provider, integrated via OIDC (authorization code flow with PKCE) and a custom login UI that drives FerrisKey's REST API directly. Authentication is session-based using `tower-sessions` with Redis as the session store.
 
 <Tip>
-Zitadel provides enterprise features like MFA, passwordless login, and organization management out of the box.
+FerrisKey is an open-source, Rust-native IdP with WebAuthn/passkey support. The template's custom login page replaces FerrisKey's built-in UI so you control the UX end-to-end.
 </Tip>
 
 ## Auth Flow
 
+The login page supports three credentials, auto-detected from the user's account state:
+
 <Steps>
-  <Step title="User clicks Sign In">
-    The user navigates to `/login` which renders the `LoginPage` component from the `auth` crate. This page collects the user's email and password.
+  <Step title="User enters email">
+    The login page POSTs to `/auth/session/start`. The server looks up the user in FerrisKey by email and inspects their credentials.
   </Step>
-  <Step title="Server validates credentials">
-    The login form submits to a server function that calls Zitadel's Session API v2 to create an authenticated session. On success, Zitadel returns session tokens.
+  <Step title="Branch on credentials">
+    - **Has passkey** → server bootstraps a FerrisKey auth-flow session and returns WebAuthn request options. The browser invokes `navigator.credentials.get()` and POSTs the assertion back to `/auth/session/passkey/verify`.
+    - **Has password** → page shows a password input that POSTs to `/auth/session/password/verify`.
+    - **No credentials / new user** → CAPTCHA-gated email-OTP flow: a 6-digit code is sent via SMTP and verified at `/auth/session/otp/verify`.
+  </Step>
+  <Step title="Token exchange">
+    On `Success`, the server exchanges the OIDC `code` for tokens at FerrisKey's `/protocol/openid-connect/token` endpoint using the PKCE verifier. The `id_token` is validated against FerrisKey's JWKS (cached, refreshed on key rotation).
   </Step>
   <Step title="Session cookie is set">
-    The server stores the session data in Redis via `tower-sessions` and sets a signed session cookie. The cookie is HTTP-only and secure in production.
+    The server records the user via `AuthUserStore::lookup_or_create_user` and stores the session in Redis. The signed cookie is HTTP-only and (in production) secure + SameSite=Lax.
   </Step>
   <Step title="Client receives auth state">
-    After login, the client fetches `/api/me` which returns the user's `LoggedInData`. The `UserAuthState` context updates to `Authenticated`, unlocking dashboard routes.
+    The login page bumps `UserDataRefreshTrigger`, which re-runs `/api/me`. `UserAuthState` transitions to `Authenticated` and the user is navigated to the redirect URL — no full page reload.
   </Step>
 </Steps>
 
@@ -36,18 +43,21 @@ Zitadel provides enterprise features like MFA, passwordless login, and organizat
 The `auth` crate defines two traits that the main app implements:
 
 ```rust
-// AuthUserStore — find or create users in your database
+// AuthUserStore — find or create users, run TOS / post-login redirect logic
 #[async_trait]
 pub trait AuthUserStore: Send + Sync {
-    async fn find_or_create_user(&self, sub: &str, email: &str)
-        -> Result<(), AuthError>;
+    async fn get_user_by_sub(&self, sub: &str) -> AuthResult<Option<AuthUser>>;
+    async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<AuthUser>>;
+    async fn create_user(&self, user: NewAuthUser) -> AuthResult<AuthUser>;
+    async fn update_user_sub(&self, user_id: &str, new_sub: &str) -> AuthResult<()>;
+    // ... and a few more
 }
 
-// AuthEmailSender — send verification/magic link emails
+// AuthEmailSender — deliver OTP codes via SMTP
 #[async_trait]
 pub trait AuthEmailSender: Send + Sync {
-    async fn send_verification_email(&self, email: &str, code: &str)
-        -> Result<(), AuthError>;
+    async fn send_verification_code(&self, to_email: &str, code: &str, expires_in_minutes: u32)
+        -> AuthResult<()>;
 }
 ```
 
@@ -103,14 +113,26 @@ pub fn DashboardShell() -> Element {
 
 ## Configuration
 
-Set these environment variables for Zitadel:
+Set these environment variables for FerrisKey:
 
 | Variable | Description |
 | --- | --- |
-| `ZITADEL_DOMAIN` | Your Zitadel instance domain |
-| `ZITADEL_ORG_ID` | Organization ID |
-| `ZITADEL_SERVICE_USER_TOKEN` | Service account PAT with Session API permissions |
+| `FERRISKEY_URL` | FerrisKey base API URL (e.g. `http://localhost:3333` or `https://ferriskey.example.com/api`) |
+| `FERRISKEY_ISSUER_URL` | _(Optional)_ Public OIDC issuer base URL. Falls back to `FERRISKEY_URL` (with `/api` stripped) if unset. |
+| `FERRISKEY_REALM` | Realm name configured in FerrisKey (e.g. `myapp`) |
+| `FERRISKEY_CLIENT_ID` | OIDC client ID registered in the realm |
+| `FERRISKEY_CLIENT_SECRET` | Client secret. Required for the authorization-code exchange and the `client_credentials` grant used for service-account user lookup/create. |
+| `TRUST_PROXY_HEADERS` | Set to `true` when running behind a reverse proxy so auth rate limiting trusts `X-Forwarded-For`. |
 
 <Warning>
-The service user token needs the `ORG_OWNER` or appropriate IAM roles to create and manage sessions via the Session API v2.
+The OIDC client must allow `authorization_code` *and* `client_credentials` grant types — the server uses the latter to manage users (lookup, create, mark email verified) without an interactive flow.
 </Warning>
+
+## Security middleware
+
+All routes mounted by `auth_router` are wrapped with:
+
+- **Rate limiting** — 20 requests/minute per client IP via `governor`.
+- **CSRF Origin check** — POST requests must carry `Origin` (or `Referer`) matching `BASE_URL`.
+
+Both are tunable in `crates/auth/src/router.rs` and `rate_limit.rs`.

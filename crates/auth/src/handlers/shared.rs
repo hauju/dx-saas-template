@@ -9,7 +9,7 @@ use tracing::{info, warn};
 /// Session key for storing the post-login redirect URL.
 pub(crate) const LOGIN_REDIRECT_URL_SESSION_KEY: &str = "login.redirect.url";
 
-/// User info extracted from OIDC userinfo or Zitadel session.
+/// User info extracted from OIDC userinfo or FerrisKey session.
 #[derive(serde::Deserialize)]
 #[allow(dead_code)]
 pub struct AuthUserInfo {
@@ -43,6 +43,7 @@ pub fn is_valid_email(email: &str) -> bool {
         return false;
     };
 
+    // Exactly one '@'
     if domain.contains('@') {
         return false;
     }
@@ -61,13 +62,16 @@ pub fn is_valid_email(email: &str) -> bool {
         return false;
     }
 
+    // Domain must have a TLD
     if !domain.contains('.') {
         return false;
     }
 
-    let local_ok = local.bytes().all(|b| {
-        b.is_ascii_alphanumeric() || b".!#$%&'*+/=?^_`{|}~-.".contains(&b)
-    });
+    // Rough character sanity — local part allows RFC-5322 atext + dot;
+    // domain is limited to LDH (letters, digits, hyphen, dot).
+    let local_ok = local
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b".!#$%&'*+/=?^_`{|}~-.".contains(&b));
     if !local_ok {
         return false;
     }
@@ -79,40 +83,10 @@ pub fn is_valid_email(email: &str) -> bool {
         return false;
     }
 
+    // No label may start/end with hyphen or be empty
     domain
         .split('.')
         .all(|label| !label.is_empty() && !label.starts_with('-') && !label.ends_with('-'))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::is_valid_email;
-
-    #[test]
-    fn accepts_normal_emails() {
-        assert!(is_valid_email("user@example.com"));
-        assert!(is_valid_email("a.b.c@sub.example.co.uk"));
-        assert!(is_valid_email("user+tag@example.com"));
-    }
-
-    #[test]
-    fn rejects_consecutive_dots() {
-        assert!(!is_valid_email("q.u.i.n.t.on..kellam@gmail.com"));
-        assert!(!is_valid_email("a..b@example.com"));
-        assert!(!is_valid_email("a@example..com"));
-    }
-
-    #[test]
-    fn rejects_malformed() {
-        assert!(!is_valid_email(""));
-        assert!(!is_valid_email("no-at-sign"));
-        assert!(!is_valid_email("two@at@signs.com"));
-        assert!(!is_valid_email(".leading@example.com"));
-        assert!(!is_valid_email("trailing.@example.com"));
-        assert!(!is_valid_email("user@nodotdomain"));
-        assert!(!is_valid_email("user@-bad.com"));
-        assert!(!is_valid_email("user@bad-.com"));
-    }
 }
 
 /// Look up user by sub or email, migrate sub if needed, create if new.
@@ -136,7 +110,7 @@ pub async fn lookup_or_create_user(
         return Ok(user);
     }
 
-    // Try to find by email (Auth0 -> Zitadel migration case)
+    // Try to find by email (IdP migration case, e.g. Auth0/Zitadel -> FerrisKey)
     let user_by_email = auth_state
         .user_store
         .get_user_by_email(&info.email)
@@ -148,7 +122,7 @@ pub async fn lookup_or_create_user(
 
     if let Some(existing_user) = user_by_email {
         info!(
-            "Migrating user {} from old IdP to Zitadel (updating sub)",
+            "Migrating user {} from old IdP to FerrisKey (updating sub)",
             existing_user.id
         );
 
@@ -161,7 +135,7 @@ pub async fn lookup_or_create_user(
                 AuthError::ServerStateError("Failed to migrate user".to_string())
             })?;
 
-        info!("Successfully migrated user sub to Zitadel");
+        info!("Successfully migrated user sub to FerrisKey");
 
         return Ok(AuthUser {
             sub: info.sub.clone(),
@@ -228,4 +202,36 @@ pub async fn determine_post_login_redirect(
     }
 
     Ok(redirect)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_valid_email;
+
+    #[test]
+    fn accepts_normal_emails() {
+        assert!(is_valid_email("user@example.com"));
+        assert!(is_valid_email("a.b.c@sub.example.co.uk"));
+        assert!(is_valid_email("user+tag@example.com"));
+    }
+
+    #[test]
+    fn rejects_consecutive_dots() {
+        // The real-world address that triggered this check.
+        assert!(!is_valid_email("q.u.i.n.t.on..kellam@gmail.com"));
+        assert!(!is_valid_email("a..b@example.com"));
+        assert!(!is_valid_email("a@example..com"));
+    }
+
+    #[test]
+    fn rejects_malformed() {
+        assert!(!is_valid_email(""));
+        assert!(!is_valid_email("no-at-sign"));
+        assert!(!is_valid_email("two@at@signs.com"));
+        assert!(!is_valid_email(".leading@example.com"));
+        assert!(!is_valid_email("trailing.@example.com"));
+        assert!(!is_valid_email("user@nodotdomain"));
+        assert!(!is_valid_email("user@-bad.com"));
+        assert!(!is_valid_email("user@bad-.com"));
+    }
 }

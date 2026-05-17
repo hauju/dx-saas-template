@@ -5,7 +5,7 @@ WASM client and an Axum server; auth, sessions, billing, email, and docs are pre
 
 - 🦀 Rust + Axum + Dioxus
 - 💾 MongoDB
-- 🔐 Zitadel (auth)
+- 🔐 FerrisKey (auth)
 - 📧 Scaleway (email)
 - 💳 Polar (billing)
 - 🐳 Coolify (server)
@@ -27,7 +27,7 @@ Self-hosted. EU-hosted. GDPR-first.
 | Server          | Axum 0.8, tower-sessions (Redis-backed)                                 |
 | Database        | MongoDB 3.x (replica set for transactions)                              |
 | Sessions cache  | Redis / Valkey                                                          |
-| Auth            | Zitadel OIDC + Session API v2 (passkey-ready)                           |
+| Auth            | FerrisKey OIDC (passkey, password, email-OTP) + custom login UI         |
 | Billing         | [Polar.sh](https://polar.sh) — customers, subscriptions, webhooks       |
 | Email           | SMTP via `lettre` (async pool); [Mailpit](https://mailpit.axllent.org) for local dev |
 | Object storage  | S3-compatible (`crates/storage`) — ready to wire                        |
@@ -47,7 +47,7 @@ Self-hosted. EU-hosted. GDPR-first.
 │   ├── models/           # Shared types (UserEntity, AppError)
 │   └── server/           # Server-only: AppState, Config, DB, auth-store impl
 ├── crates/
-│   ├── auth/             # Zitadel OIDC + Session API v2, CSRF, rate-limiting
+│   ├── auth/             # FerrisKey OIDC + custom login UI, JWKS, CSRF, rate-limiting
 │   ├── crypto/           # Argon2 hashing, AES-256-GCM, token generation
 │   ├── smtp/             # lettre async/sync pools
 │   ├── polar/            # Polar.sh billing API + webhook verification
@@ -119,7 +119,7 @@ Clone the repo, then rename the project:
 just rename my-new-project
 ```
 
-Then update `repository` in `Cargo.toml`, wire Zitadel + Polar credentials in `.env`,
+Then update `repository` in `Cargo.toml`, wire FerrisKey + Polar credentials in `.env`,
 and replace `LICENSE` with your own if needed.
 
 ## License

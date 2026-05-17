@@ -1,7 +1,7 @@
 //! Auth-owned domain types.
 //!
-//! These decouple the auth crate from `seggwat-core` domain types.
-//! The dashboard's trait implementations convert between these and
+//! These decouple the auth crate from the host application's domain types.
+//! The host app's trait implementations convert between these and
 //! the core `User`/`UserToCreate`/`UserTosAcceptance` types.
 
 use serde::{Deserialize, Serialize};

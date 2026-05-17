@@ -1,14 +1,14 @@
 //! Trait abstractions for auth operations.
 //!
-//! These traits decouple the auth crate from `seggwat-app` (database, email, business logic).
-//! The dashboard provides concrete implementations that wrap `AppState`.
+//! These traits decouple the auth crate from the host application (database, email, business logic).
+//! The host app provides concrete implementations that wrap `AppState`.
 
 use crate::error::AuthResult;
 use crate::types::{AuthTosAcceptance, AuthUser, NewAuthUser};
 
 /// User lookup, creation, migration, TOS, and post-login redirect.
 ///
-/// Implemented by the dashboard to bridge `seggwat-core::User` ↔ `AuthUser`.
+/// Implemented by the host app to bridge its `User` type ↔ `AuthUser`.
 #[async_trait::async_trait]
 pub trait AuthUserStore: Send + Sync + 'static {
     /// Find a user by their OIDC subject identifier.
@@ -37,6 +37,15 @@ pub trait AuthUserStore: Send + Sync + 'static {
         user_id: &str,
         default_url: &str,
     ) -> AuthResult<String>;
+
+    /// Record that the given user has just successfully logged in.
+    /// Default implementation is a no-op so older `AuthUserStore` impls
+    /// keep compiling; the dashboard may override it to bump
+    /// `users.last_login_at`. Errors here are logged but should never
+    /// fail the login flow.
+    async fn record_login(&self, _user_id: &str) -> AuthResult<()> {
+        Ok(())
+    }
 }
 
 /// Sends verification emails (OTP codes).

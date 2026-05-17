@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A fullstack SaaS template built with Dioxus 0.7 (Rust), using MongoDB, Redis, Zitadel (OIDC auth), Polar (billing), and SMTP email. The app compiles into two binaries via Cargo feature flags: a server (`server` feature) and a WASM client (`web` feature).
+A fullstack SaaS template built with Dioxus 0.7 (Rust), using MongoDB, Redis, FerrisKey (OIDC auth), Polar (billing), and SMTP email. The app compiles into two binaries via Cargo feature flags: a server (`server` feature) and a WASM client (`web` feature).
 
 ## Commands
 
@@ -70,7 +70,7 @@ The binary is split by Cargo features. Code gated with `#[cfg(feature = "server"
 
 All crates are decoupled from the main app via traits and config structs:
 
-- **`auth`** — Zitadel OIDC + Session API v2 integration, session management (`UserSession` extractor), rate limiting, login page component. Has `server` and `web` feature flags. Defines `AuthUserStore` and `AuthEmailSender` traits that the main app implements.
+- **`auth`** — FerrisKey OIDC integration with custom login UI (passkey, password, email-OTP), JWKS validation, CAPTCHA-gated registration, session management (`UserSession` extractor), rate limiting. Has `server` and `web` feature flags. Defines `AuthUserStore` and `AuthEmailSender` traits that the main app implements.
 - **`crypto`** — Argon2 hashing, AES-256-GCM encryption, token/OTP generation.
 - **`smtp`** — Email sending via `lettre` with sync and async clients, attachment support.
 - **`polar`** — Polar.sh billing API: customers, subscriptions, checkout, orders, webhook verification.
@@ -90,7 +90,7 @@ To add a new docs page: create an `.mdx` file in `docs/`, add its path to the ap
 ### Key Patterns
 
 - **Global state**: `AppState::global()` via `OnceLock`, also available as an Axum extractor.
-- **Auth flow**: Zitadel OIDC → session cookie (tower-sessions + Redis) → `UserSession` extractor on server functions.
+- **Auth flow**: FerrisKey OIDC (auth code + PKCE) → session cookie (tower-sessions + Redis) → `UserSession` extractor on server functions. Supports passkey, password, and email-OTP login paths.
 - **Client auth state**: `UserAuthState` enum provided via context. `use_server_future` fetches `/api/me` on load; a `UserDataRefreshTrigger` signal re-fetches on demand.
 - **Server functions**: Use `#[post("/api/...")]` with optional `session: auth::UserSession` parameter.
 - **Error handling**: `AppError` enum maps to HTTP status codes and converts to `ServerFnError` for RPC.
@@ -110,7 +110,7 @@ The `Dockerfile` builds a two-stage image: compiles with `dx build --release --p
 
 ### Environment Variables
 
-Copy `.env.example` to `.env`. Key variables: `DATABASE_URL`, `REDIS_URL`, `BASE_URL`, `SESSION_SECRET` (hex, 64+ bytes), `ZITADEL_DOMAIN`, SMTP settings, optional Polar billing keys, optional `SENTRY_DSN` + `ENVIRONMENT` (requires `--features sentry`).
+Copy `.env.example` to `.env`. Key variables: `DATABASE_URL`, `REDIS_URL`, `BASE_URL`, `SESSION_SECRET` (hex, 64+ bytes), `FERRISKEY_URL` + `FERRISKEY_REALM` + `FERRISKEY_CLIENT_ID` + `FERRISKEY_CLIENT_SECRET`, SMTP settings, optional Polar billing keys, optional `SENTRY_DSN` + `ENVIRONMENT` (requires `--features sentry`).
 
 ### Styling
 

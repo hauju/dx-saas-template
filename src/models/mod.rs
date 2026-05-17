@@ -1,6 +1,7 @@
 pub mod error;
 pub mod user;
 
+#[cfg(feature = "server")]
 pub use error::AppError;
 
 /// Check if an error is an authentication error (user not logged in).

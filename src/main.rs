@@ -128,15 +128,30 @@ async fn main() {
     let auth_config = auth::AuthConfig {
         login_page_url: "/login".to_string(),
         default_post_login_url: "/dashboard".to_string(),
-        zitadel_domain: app_state.config.zitadel_domain.clone(),
-        zitadel_org_id: app_state.config.zitadel_org_id.clone(),
-        zitadel_service_user_token: app_state.secrets.zitadel_service_user_token.clone(),
+        dev_login_url: "/login".to_string(),
+        ferriskey_url: app_state.config.ferriskey_url.clone(),
+        ferriskey_issuer_url: app_state.config.ferriskey_issuer_url.clone(),
+        ferriskey_realm: app_state.config.ferriskey_realm.clone(),
+        ferriskey_client_id: app_state.config.ferriskey_client_id.clone(),
+        ferriskey_client_secret: app_state.secrets.ferriskey_client_secret.clone(),
         base_url: app_state.config.base_url.clone(),
+        trust_proxy_headers: app_state.config.trust_proxy_headers,
     };
+
+    let jwks_cache = Arc::new(auth::JwksCache::new(
+        &auth_config.ferriskey_url,
+        auth_config
+            .ferriskey_issuer_url
+            .as_deref()
+            .unwrap_or(&auth_config.ferriskey_url),
+        &auth_config.ferriskey_realm,
+        &auth_config.ferriskey_client_id,
+    ));
 
     let auth_state = auth::AuthState {
         user_store: Arc::new(AppAuthUserStore::new(app_state.clone())),
         email_sender: Arc::new(AppEmailSender::new(app_state.clone())),
+        jwks_cache,
     };
 
     let auth_routes = auth::auth_router(auth_config, auth_state);

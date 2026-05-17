@@ -6,9 +6,12 @@ pub struct Config {
     pub db_url: String,
     pub redis_url: String,
     pub base_url: String,
-    pub zitadel_domain: String,
-    pub zitadel_org_id: Option<String>,
+    pub ferriskey_url: String,
+    pub ferriskey_issuer_url: Option<String>,
+    pub ferriskey_realm: String,
+    pub ferriskey_client_id: String,
     pub secure_cookies: bool,
+    pub trust_proxy_headers: bool,
     pub smtp_host: String,
     pub smtp_port: u16,
     pub smtp_from: String,
@@ -23,11 +26,16 @@ impl Config {
             db_url: get_env("DATABASE_URL")?,
             redis_url: get_env("REDIS_URL")?,
             base_url: get_env("BASE_URL")?,
-            zitadel_domain: get_env("ZITADEL_DOMAIN")?,
-            zitadel_org_id: get_env_optional("ZITADEL_ORG_ID"),
+            ferriskey_url: get_env("FERRISKEY_URL")?,
+            ferriskey_issuer_url: get_env_optional("FERRISKEY_ISSUER_URL"),
+            ferriskey_realm: get_env("FERRISKEY_REALM")?,
+            ferriskey_client_id: get_env("FERRISKEY_CLIENT_ID")?,
             secure_cookies: get_env_optional("SECURE_COOKIES")
                 .map(|v| v == "true")
                 .unwrap_or(true),
+            trust_proxy_headers: get_env_optional("TRUST_PROXY_HEADERS")
+                .map(|v| v == "true")
+                .unwrap_or(false),
             smtp_host: get_env("SMTP_HOST")?,
             smtp_port: get_env("SMTP_PORT")?
                 .parse()
@@ -52,7 +60,7 @@ impl Config {
 pub struct Secrets {
     pub session_secret: Vec<u8>,
     pub encryption_key: Option<[u8; 32]>,
-    pub zitadel_service_user_token: Option<String>,
+    pub ferriskey_client_secret: Option<String>,
     pub smtp_user: secrecy::SecretString,
     pub smtp_password: secrecy::SecretString,
     pub polar_access_token: Option<String>,
@@ -91,7 +99,7 @@ impl Secrets {
         Ok(Self {
             session_secret,
             encryption_key,
-            zitadel_service_user_token: get_env_optional("ZITADEL_SERVICE_USER_TOKEN"),
+            ferriskey_client_secret: get_env_optional("FERRISKEY_CLIENT_SECRET"),
             smtp_user: secrecy::SecretString::from(
                 get_env_optional("SMTP_USER").unwrap_or_default(),
             ),

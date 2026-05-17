@@ -13,6 +13,7 @@ pub struct LoggedInData {
     pub email: String,
     pub username: String,
     pub avatar_url: Option<String>,
+    pub id_token: String,
 }
 
 /// Used for extracting in the server functions.

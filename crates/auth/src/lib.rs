@@ -1,10 +1,9 @@
-//! SeggWat authentication crate.
+//! Authentication crate.
 //!
-//! Provides Zitadel Session API v2 and WebAuthn integration
-//! as a reusable workspace crate.
+//! Drives a custom login UI against FerrisKey's REST API. Owns OIDC code
+//! exchange, password / passkey verification, and our own email-OTP fallback.
 //!
-//! This crate is independent of `seggwat-app` and `seggwat-core`.
-//! The dashboard provides trait implementations via `AuthUserStore`
+//! The application provides trait implementations via `AuthUserStore`
 //! and `AuthEmailSender` to bridge auth ↔ business logic.
 
 mod config;
@@ -28,7 +27,13 @@ pub use state::AuthState;
 pub use traits::{AuthEmailSender, AuthUserStore};
 
 #[cfg(feature = "server")]
-pub mod zitadel;
+pub mod jwt;
+
+#[cfg(feature = "server")]
+pub use jwt::JwksCache;
+
+#[cfg(feature = "server")]
+pub mod ferriskey;
 
 #[cfg(feature = "server")]
 pub mod session;

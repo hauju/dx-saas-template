@@ -1,7 +1,7 @@
 FROM rust:1.86 AS builder
 
 # Install dioxus CLI
-RUN curl -sSL https://dioxus.dev/install.sh | sh
+RUN curl -sSL https://dioxus.dev/install.sh | sh -s -- 0.7.9
 
 # Install bun for Tailwind CSS
 RUN curl -fsSL https://bun.sh/install | bash

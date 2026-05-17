@@ -1,6 +1,6 @@
 [package]
 name = "dx-saas-template"
-description = "Fullstack Dioxus 0.7 SaaS template with Zitadel auth, MongoDB, Redis sessions, Polar billing, and embedded docs."
+description = "Fullstack Dioxus 0.7 SaaS template with FerrisKey auth, MongoDB, Redis sessions, Polar billing, and embedded docs."
 readme = "README.md"
 version.workspace = true
 authors.workspace = true
@@ -27,7 +27,7 @@ chrono = { version = "0.4", features = ["serde"] }
 
 [dependencies]
 # Framework
-dioxus = { version = "0.7.4", features = ["router", "fullstack"] }
+dioxus = { version = "0.7.9", features = ["router", "fullstack"] }
 
 # Serialization
 serde = { workspace = true }

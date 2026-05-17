@@ -1,5 +1,6 @@
 //! Auth state: trait-object holders for user store and email sender.
 
+use crate::jwt::JwksCache;
 use crate::traits::{AuthEmailSender, AuthUserStore};
 use std::sync::Arc;
 
@@ -7,8 +8,12 @@ use std::sync::Arc;
 ///
 /// Holds trait objects so the auth crate stays independent of
 /// dashboard-specific types (`Database`, `AppState`, etc.).
+///
+/// `jwks_cache` is shared (Arc) so the JWKS cache persists across
+/// logins instead of being rebuilt — and refetched — on every flow.
 #[derive(Clone)]
 pub struct AuthState {
     pub user_store: Arc<dyn AuthUserStore>,
     pub email_sender: Arc<dyn AuthEmailSender>,
+    pub jwks_cache: Arc<JwksCache>,
 }

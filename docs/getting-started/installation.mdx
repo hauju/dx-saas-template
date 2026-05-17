@@ -32,7 +32,7 @@ Make sure you have the following installed:
     Then edit `.env` to set the rest:
     - `DATABASE_URL` — MongoDB connection string (default: `mongodb://localhost:27017`)
     - `REDIS_URL` — Redis connection string (default: `redis://localhost:6379`)
-    - `ZITADEL_DOMAIN` — Your Zitadel instance domain
+    - `FERRISKEY_URL` / `FERRISKEY_REALM` / `FERRISKEY_CLIENT_ID` / `FERRISKEY_CLIENT_SECRET` — Your FerrisKey instance, realm, and OIDC client
     - `BASE_URL` — Your app's base URL (default: `http://localhost:8080`)
   </Step>
   <Step title="Start infrastructure">
@@ -84,10 +84,13 @@ The `dx serve` command automatically compiles Tailwind CSS. You only need to run
     - `SESSION_SECRET` — Hex-encoded session signing key (64+ bytes)
     - `SECURE_COOKIES` — Set to `true` in production (HTTPS)
   </Accordion>
-  <Accordion title="Zitadel Auth">
-    - `ZITADEL_DOMAIN` — Your Zitadel instance (e.g., `auth.example.com`)
-    - `ZITADEL_ORG_ID` — Organization ID
-    - `ZITADEL_SERVICE_USER_TOKEN` — Service account PAT for Session API
+  <Accordion title="FerrisKey Auth">
+    - `FERRISKEY_URL` — Base API URL (e.g., `http://localhost:3333` or `https://ferriskey.example.com/api`)
+    - `FERRISKEY_ISSUER_URL` — _(Optional)_ Public OIDC issuer base URL
+    - `FERRISKEY_REALM` — Realm name (e.g., `myapp`)
+    - `FERRISKEY_CLIENT_ID` — OIDC client ID registered in the realm
+    - `FERRISKEY_CLIENT_SECRET` — Client secret (allow `authorization_code` + `client_credentials` grants)
+    - `TRUST_PROXY_HEADERS` — Set to `true` when behind a reverse proxy
   </Accordion>
   <Accordion title="Email (SMTP)">
     - `SMTP_HOST` — SMTP server host

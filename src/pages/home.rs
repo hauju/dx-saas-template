@@ -34,7 +34,7 @@ pub fn Home() -> Element {
             div { class: "grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-3xl mx-auto",
                 FeatureCard {
                     title: "Authentication",
-                    description: "Zitadel OIDC + WebAuthn passkeys with email OTP fallback.",
+                    description: "FerrisKey OIDC + WebAuthn passkeys with email OTP fallback.",
                 }
                 FeatureCard {
                     title: "Fullstack Rust",

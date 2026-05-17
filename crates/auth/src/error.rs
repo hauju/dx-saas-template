@@ -3,7 +3,7 @@ pub type AuthResult<T> = core::result::Result<T, AuthError>;
 
 /// Auth-specific errors.
 ///
-/// Dashboard's `Error` enum should add `AuthError(#[from] seggwat_auth::AuthError)`
+/// Dashboard's `Error` enum should add `AuthError(#[from] auth::AuthError)`
 /// and delegate the `IntoResponse` conversion for auth error variants.
 #[derive(thiserror::Error, Debug)]
 pub enum AuthError {
@@ -26,9 +26,14 @@ pub enum AuthError {
     #[error("SessionError: {0}")]
     SessionError(#[from] tower_sessions::session::Error),
 
+    /// Non-2xx response from FerrisKey. Carries the HTTP status and a body
+    /// snippet for tracing.
     #[cfg(feature = "server")]
-    #[error("GrpcError: {0}")]
-    GrpcError(Box<tonic::Status>),
+    #[error("FerrisKeyError: {status} — {body}")]
+    FerrisKeyError {
+        status: reqwest::StatusCode,
+        body: String,
+    },
 
     #[cfg(feature = "server")]
     #[error("ReqwestError: {0}")]
@@ -39,19 +44,19 @@ pub enum AuthError {
 }
 
 #[cfg(feature = "server")]
-impl From<tonic::Status> for AuthError {
-    fn from(status: tonic::Status) -> Self {
-        AuthError::GrpcError(Box::new(status))
-    }
-}
-
-#[cfg(feature = "server")]
 impl axum::response::IntoResponse for AuthError {
     fn into_response(self) -> axum::response::Response {
         use reqwest::StatusCode;
 
         let full_message = self.to_string();
-        tracing::error!("AuthError: {full_message}");
+
+        // Only log internal errors at ERROR level (→ Sentry event via tracing layer)
+        // Client/auth errors at WARN level (→ breadcrumb only)
+        if self.is_internal_error() {
+            tracing::error!("AuthError (internal): {full_message}");
+        } else {
+            tracing::warn!("AuthError: {full_message}");
+        }
 
         match self {
             AuthError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg).into_response(),
@@ -74,7 +79,7 @@ impl axum::response::IntoResponse for AuthError {
                 "Session management error",
             )
                 .into_response(),
-            AuthError::GrpcError(_) => (
+            AuthError::FerrisKeyError { .. } => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "An error occurred while communicating with an external service",
             )
@@ -88,5 +93,22 @@ impl axum::response::IntoResponse for AuthError {
                 (StatusCode::INTERNAL_SERVER_ERROR, "Data processing error").into_response()
             }
         }
+    }
+}
+
+#[cfg(feature = "server")]
+impl AuthError {
+    /// Returns true for server-side errors that should be reported to Sentry.
+    /// Client/auth errors (bad credentials, expired sessions) are expected and not actionable.
+    fn is_internal_error(&self) -> bool {
+        matches!(
+            self,
+            AuthError::ServerStateError(_)
+                | AuthError::AuthSessionLayerNotFound(_)
+                | AuthError::SessionError(_)
+                | AuthError::FerrisKeyError { .. }
+                | AuthError::ReqwestError(_)
+                | AuthError::SerdeError(_)
+        )
     }
 }
