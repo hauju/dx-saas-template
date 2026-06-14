@@ -63,8 +63,9 @@ The binary is split by Cargo features. Code gated with `#[cfg(feature = "server"
 - **`src/routes.rs`** — `Route` enum (derives `Routable`). Three layouts: `Navbar` for public pages, `DashboardShell` for authenticated pages, `DocsShell` for documentation pages.
 - **`src/pages/`** — Page components: `Home`, `LoginPage`, `Dashboard`, `Settings`, `DocsPage`.
 - **`src/components/`** — Shared UI: `Navbar`, `DashboardShell`, `ToastProvider`/`ToastManager`.
-- **`src/models/`** — Shared types (`LoggedInData`, `AppError`). `UserEntity` is server-only.
-- **`src/server/`** — Server-only: `AppState` (global singleton via `OnceLock`), `Config`/`Secrets`, `Database` (MongoDB), `AppAuthUserStore`/`AppEmailSender` (trait implementations).
+- **`src/models/`** — Shared types (`LoggedInData`, `AppError`, `ApiKeyInfo`/`NewApiKey`, `SubscriptionInfo`). `UserEntity` and `ApiKeyEntity` are server-only.
+- **`src/server/`** — Server-only: `AppState` (global singleton via `OnceLock`, also holds the shared `JwksCache`), `Config`/`Secrets`, `Database` (MongoDB), `AppAuthUserStore`/`AppEmailSender` (trait implementations). Also: `security` (response headers, redacted request spans, reusable `IpRateLimiter`), `api_key`/`api_auth` (opaque `oat_` key store + dual-auth `ApiAuth` extractor), `oauth` (self-hosted OAuth 2.1 AS for MCP), `mcp` (`rmcp` Streamable-HTTP MCP server), `billing` (Polar webhook + subscription gating).
+- **`src/api_keys.rs`** / **`src/subscription.rs`** — Dual-target modules with server functions + Settings UI cards for API-key management and subscription status.
 
 ### Workspace Crates (`crates/`)
 
@@ -94,7 +95,11 @@ To add a new docs page: create an `.mdx` file in `docs/`, add its path to the ap
 - **Client auth state**: `UserAuthState` enum provided via context. `use_server_future` fetches `/api/me` on load; a `UserDataRefreshTrigger` signal re-fetches on demand.
 - **Server functions**: Use `#[post("/api/...")]` with optional `session: auth::UserSession` parameter.
 - **Error handling**: `AppError` enum maps to HTTP status codes and converts to `ServerFnError` for RPC.
-- **Database**: MongoDB database named `dx_saas`, single `users` collection with unique indexes on `sub` and `email`.
+- **Database**: MongoDB database named `dx_saas`. Collections: `users` (unique `sub`/`email`), `api_keys` (prefix + owner indexes), `oauth_clients` (unique `client_id`), `oauth_codes` (unique `code` + TTL on `expires_at`).
+- **API keys (M2M auth)**: `oat_` tokens, Argon2-hashed with a separate indexed prefix for lookup (`src/server/api_key.rs`). The `ApiAuth` extractor (`src/server/api_auth.rs`) accepts either `X-API-Key`/`Authorization: Bearer oat_…` or a FerrisKey JWT. Manage keys in Settings.
+- **OAuth-for-MCP**: A self-hosted OAuth 2.1 authorization server (`src/server/oauth/`) — protected-resource + AS metadata (RFC 9728/8414), dynamic client registration (RFC 7591, redirect-URI allowlist is the security boundary), auth-code + PKCE S256 reusing the login session, and a token endpoint that mints `oat_` tokens. The MCP endpoint (`POST /mcp`, `src/server/mcp.rs`) is an `rmcp` 0.14 `StreamableHttpService` with tools defined via `#[tool_router]`/`#[tool]` on `McpTools`; tools authenticate via the shared `api_auth::authenticate`. An `mcp_auth_challenge` middleware does a presence-only check — no credential returns `401` + `WWW-Authenticate` pointing at the metadata (triggering OAuth discovery). Add new tools as `#[tool]` methods.
+- **Billing webhooks**: `POST /webhooks/polar` (`src/server/billing.rs`) verifies the Standard Webhooks signature and syncs `SubscriptionInfo` onto the user. Gate premium features with `billing::require_active(&user.subscription)?` (maps to `402`).
+- **Security middleware**: `src/server/security.rs` adds hardening headers (HSTS gated on `secure_cookies`, CSP `frame-ancestors 'none'`, `X-Frame-Options`, `nosniff`, referrer policy), a query-redacted request span, and a reusable per-IP `IpRateLimiter` (global backstop + stricter quotas on auth/OAuth/MCP/webhook routers). The server is served with `into_make_service_with_connect_info` so per-IP limiting works.
 - **Axum route params**: Use curly braces `"/api/{id}"` not colon `"/api/:id"` in Axum 0.8+ routes (colon causes runtime panic).
 - **Crate fast-check**: Use `cargo check -p crate-name` for fast feedback when editing workspace crates before a full build.
 

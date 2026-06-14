@@ -1,9 +1,11 @@
 use dioxus::prelude::*;
 
+mod api_keys;
 mod components;
 mod models;
 mod pages;
 pub mod routes;
+mod subscription;
 
 #[cfg(feature = "server")]
 mod server;
@@ -53,6 +55,7 @@ async fn main() {
 
     use axum::Extension;
     use tower_http::compression::CompressionLayer;
+    use tower_http::trace::TraceLayer;
     use tower_sessions::cookie::time::Duration;
     use tower_sessions::{Expiry, SessionManagerLayer};
     use tower_sessions_redis_store::RedisStore;
@@ -138,20 +141,10 @@ async fn main() {
         trust_proxy_headers: app_state.config.trust_proxy_headers,
     };
 
-    let jwks_cache = Arc::new(auth::JwksCache::new(
-        &auth_config.ferriskey_url,
-        auth_config
-            .ferriskey_issuer_url
-            .as_deref()
-            .unwrap_or(&auth_config.ferriskey_url),
-        &auth_config.ferriskey_realm,
-        &auth_config.ferriskey_client_id,
-    ));
-
     let auth_state = auth::AuthState {
         user_store: Arc::new(AppAuthUserStore::new(app_state.clone())),
         email_sender: Arc::new(AppEmailSender::new(app_state.clone())),
-        jwks_cache,
+        jwks_cache: app_state.jwks.clone(),
     };
 
     let auth_routes = auth::auth_router(auth_config, auth_state);
@@ -159,20 +152,47 @@ async fn main() {
     // Build the Dioxus server router with layers
     let address = dioxus::cli_config::fullstack_address_or_localhost();
 
+    // HSTS is only safe over HTTPS, so gate it on the same flag as secure cookies.
+    let hsts = app_state.config.secure_cookies;
+    let trust_proxy = app_state.config.trust_proxy_headers;
+    // Global per-IP backstop against abuse; sensitive sub-routers add stricter quotas.
+    let global_rate_limiter = server::security::IpRateLimiter::per_minute(600, trust_proxy);
+
     let router = dioxus::server::router(App)
         .merge(auth_routes)
+        // OAuth 2.1 authorization server + MCP connector (see src/server/oauth, mcp).
+        .merge(server::oauth::oauth_router(trust_proxy))
+        .merge(server::mcp::mcp_router(app_state.clone(), trust_proxy))
+        // Polar billing webhook (see src/server/billing).
+        .merge(server::billing::billing_router(trust_proxy))
         .layer(session_layer)
         .layer(CompressionLayer::new())
-        .layer(Extension(app_state));
+        .layer(Extension(app_state))
+        // Per-IP rate-limit backstop (Extension must sit outside the middleware).
+        .layer(axum::middleware::from_fn(server::security::ip_rate_limit))
+        .layer(Extension(global_rate_limiter))
+        // Hardening headers on every response (including errors above).
+        .layer(axum::middleware::from_fn(
+            move |req: axum::extract::Request, next: axum::middleware::Next| async move {
+                let mut res = next.run(req).await;
+                server::security::apply_security_headers(res.headers_mut(), hsts);
+                res
+            },
+        ))
+        // Outermost: a request span that records the path only (never the query).
+        .layer(TraceLayer::new_for_http().make_span_with(server::security::redacted_request_span));
 
     tracing::info!("Listening on {address}");
 
     let listener = tokio::net::TcpListener::bind(address)
         .await
         .expect("Failed to bind TCP listener");
-    axum::serve(listener, router.into_make_service())
-        .await
-        .expect("Server error");
+    axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await
+    .expect("Server error");
 }
 
 // ============================================================================

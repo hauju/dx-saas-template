@@ -63,3 +63,19 @@ jobs:
 
       - name: cargo test
         run: cargo test --workspace --exclude dx-saas-template
+
+  audit:
+    name: cargo audit (vulnerable deps)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: cargo audit
+        run: cargo audit

@@ -48,6 +48,7 @@ impl AuthUserStore for AppAuthUserStore {
             email: user.email,
             name: None,
             avatar_url: None,
+            subscription: None,
             created_at: now,
             updated_at: now,
         };

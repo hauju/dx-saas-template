@@ -22,6 +22,10 @@ pub struct UserEntity {
     /// Avatar URL
     pub avatar_url: Option<String>,
 
+    /// Current subscription state, synced from Polar webhooks.
+    #[serde(default)]
+    pub subscription: Option<crate::models::subscription::SubscriptionInfo>,
+
     /// When the user was created
     pub created_at: chrono::DateTime<chrono::Utc>,
 

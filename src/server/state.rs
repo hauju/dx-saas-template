@@ -1,4 +1,4 @@
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
@@ -13,6 +13,9 @@ pub struct AppState {
     pub db: Database,
     pub config: Config,
     pub secrets: Secrets,
+    /// Shared JWKS cache for validating FerrisKey-issued bearer tokens. Held here
+    /// so it's reused by both the auth router and the API dual-auth extractor.
+    pub jwks: Arc<auth::JwksCache>,
 }
 
 static APP_STATE: OnceLock<AppState> = OnceLock::new();
@@ -24,10 +27,21 @@ impl AppState {
         let secrets = Secrets::load_from_env()?;
         let db = Database::new(&config.db_url).await?;
 
+        let jwks = Arc::new(auth::JwksCache::new(
+            &config.ferriskey_url,
+            config
+                .ferriskey_issuer_url
+                .as_deref()
+                .unwrap_or(&config.ferriskey_url),
+            &config.ferriskey_realm,
+            &config.ferriskey_client_id,
+        ));
+
         let state = Self {
             db,
             config,
             secrets,
+            jwks,
         };
 
         APP_STATE

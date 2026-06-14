@@ -16,4 +16,7 @@ mod tokens;
 pub use error::{Error, Result};
 pub use hashing::{hash_secret, verify_secret};
 pub use random::{generate_numeric_otp, generate_random_bytes, generate_url_safe_token};
-pub use tokens::{generate_api_key, generate_csrf_token, generate_invitation_token};
+pub use tokens::{
+    API_KEY_PREFIX_LEN, api_key_prefix, generate_api_key, generate_csrf_token,
+    generate_invitation_token, pkce_s256_matches,
+};

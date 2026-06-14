@@ -1,6 +1,8 @@
 use dioxus::prelude::*;
 
 use crate::UserAuthState;
+use crate::api_keys::ApiKeysCard;
+use crate::subscription::SubscriptionCard;
 
 /// Settings page — user account settings.
 #[component]
@@ -44,6 +46,9 @@ pub fn Settings() -> Element {
                     }
                 }
             }
+
+            ApiKeysCard {}
+            SubscriptionCard {}
         }
     }
 }
