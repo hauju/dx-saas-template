@@ -1,0 +1,5 @@
+# Ignore everything by default
+*
+
+# Only include the pre-built dx bundle output (built in CI before docker build)
+!target/dx/dx-saas-template/release/web/

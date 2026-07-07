@@ -1,9 +1,329 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
-@plugin "daisyui" {
-    themes: dark --default, light;
+@plugin "daisyui";
+
+/* ── Cool azure palette ──
+   Azure primary, indigo secondary, cyan accent over a cool slate base. Hues
+   sit in the 205–275° arc (cyan → azure → indigo) to read as a single cold
+   gradient. Distinct from the warm-neutral greys of stock DaisyUI. Depth
+   shadows are disabled (--depth: 0) so all elevation is handled by the custom
+   box-shadows in assets/main.css. */
+
+@plugin "daisyui/theme" {
+    name: "dark";
+    default: true;
+    prefersdark: true;
+    color-scheme: dark;
+    --color-base-100: #0a0e14;
+    --color-base-200: #121821;
+    --color-base-300: #1e2733;
+    --color-base-content: #e6edf3;
+    --color-primary: #4ca6ff;
+    --color-primary-content: #04121f;
+    --color-secondary: #7c8cf8;
+    --color-secondary-content: #0a0f2a;
+    --color-accent: #22d3ee;
+    --color-accent-content: #04212a;
+    --color-neutral: #232e3a;
+    --color-neutral-content: #e6edf3;
+    --color-info: #38bdf8;
+    --color-info-content: #04212a;
+    --color-success: #4ade80;
+    --color-success-content: #052b16;
+    --color-warning: #e8b04a;
+    --color-warning-content: #2a1d05;
+    --color-error: #e57373;
+    --color-error-content: #2a0a0a;
+    --radius-box: 0.75rem;
+    --radius-field: 0.5rem;
+    --depth: 0;
+}
+
+@plugin "daisyui/theme" {
+    name: "light";
+    color-scheme: light;
+    --color-base-100: #f6f8fb;
+    --color-base-200: #eef2f7;
+    --color-base-300: #dbe2ec;
+    --color-base-content: #101720;
+    --color-primary: #2563eb;
+    --color-primary-content: #ffffff;
+    --color-secondary: #4f46e5;
+    --color-secondary-content: #ffffff;
+    --color-accent: #0891b2;
+    --color-accent-content: #ffffff;
+    --color-neutral: #c3ccd8;
+    --color-neutral-content: #101720;
+    --color-info: #0284c7;
+    --color-info-content: #ffffff;
+    --color-success: #16a34a;
+    --color-success-content: #ffffff;
+    --color-warning: #c47b1a;
+    --color-warning-content: #ffffff;
+    --color-error: #dc2626;
+    --color-error-content: #ffffff;
+    --radius-box: 0.75rem;
+    --radius-field: 0.5rem;
+    --depth: 0;
 }
 
 @source "./src/**/*.{rs,html,css}";
+@source "./crates/**/*.{rs,html,css}";
 @source "./safelist-docs-kit.html";
+
+/* ── Typography ──
+   System sans stack (no bundled web fonts). Headings get tight tracking and
+   the whole page is antialiased for a crisper, more premium render. */
+
+@theme {
+    --font-sans:
+        ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+        "Helvetica Neue", Arial, sans-serif;
+    --font-mono:
+        ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    letter-spacing: -0.025em;
+}
+
+/* ── Card hover lift ──
+   Static div cards opt in with `.card-hover`; anchor/button cards lift by
+   default. Resting border + shadow live in assets/main.css (.card-elevated). */
+
+.card {
+    transition:
+        transform 0.2s ease,
+        box-shadow 0.2s ease,
+        border-color 0.2s ease;
+}
+
+[data-theme="dark"] .card.bg-base-200 {
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
+}
+
+[data-theme="dark"] a.card:hover,
+[data-theme="dark"] button.card:hover,
+[data-theme="dark"] .card-hover:hover {
+    transform: translateY(-3px);
+    box-shadow:
+        0 8px 24px rgba(0, 0, 0, 0.28),
+        0 0 0 1px oklch(0.72 0.15 250 / 0.2);
+    border-color: oklch(0.72 0.15 250 / 0.35);
+}
+
+[data-theme="light"] a.card:hover,
+[data-theme="light"] button.card:hover,
+[data-theme="light"] .card-hover:hover {
+    transform: translateY(-3px);
+    box-shadow:
+        0 1px 2px rgba(16, 23, 32, 0.04),
+        0 6px 16px rgba(37, 99, 235, 0.1),
+        0 0 0 1px oklch(0.55 0.15 250 / 0.16);
+    border-color: oklch(0.55 0.15 250 / 0.28);
+}
+
+a.card:active,
+button.card:active,
+.card-hover:active {
+    transform: translateY(-1px);
+    transition-duration: 0.1s;
+}
+
+/* ── Fade-up entrance ── */
+
+@keyframes fade-up {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-fade-up {
+    animation: fade-up 0.4s ease-out both;
+}
+
+/* ── Skeleton shimmer ── */
+
+@keyframes skeleton-shimmer {
+    0% {
+        background-position: -200% 0;
+    }
+    100% {
+        background-position: 200% 0;
+    }
+}
+
+.skeleton-shimmer {
+    background: linear-gradient(
+        90deg,
+        oklch(0.24 0.02 250 / 0.4) 25%,
+        oklch(0.34 0.03 250 / 0.5) 50%,
+        oklch(0.24 0.02 250 / 0.4) 75%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.5s ease-in-out infinite;
+    border-radius: 0.25rem;
+}
+
+/* ── Card child micro-interactions ── */
+
+.card:hover .badge {
+    transform: scale(1.05);
+    transition: transform 0.2s ease;
+}
+
+.card:hover .icon-animate {
+    transform: rotate(-5deg) scale(1.1);
+    transition: transform 0.2s ease;
+}
+
+/* ── Landing hero ── */
+
+.landing-gradient-text {
+    background: linear-gradient(
+        135deg,
+        oklch(0.78 0.13 235) 0%,
+        oklch(0.68 0.17 275) 50%,
+        oklch(0.82 0.12 205) 100%
+    );
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.landing-hero-glow {
+    position: absolute;
+    top: -10rem;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 40rem;
+    height: 40rem;
+    background: radial-gradient(
+        circle,
+        oklch(0.6 0.15 250 / 0.16) 0%,
+        oklch(0.55 0.14 270 / 0.08) 40%,
+        transparent 70%
+    );
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* Masked grid backdrop — faint guideline texture that fades toward the edges */
+.landing-hero-grid {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-size: 56px 56px;
+    -webkit-mask-image: radial-gradient(
+        ellipse 60% 50% at 50% 0%,
+        #000 35%,
+        transparent 78%
+    );
+    mask-image: radial-gradient(
+        ellipse 60% 50% at 50% 0%,
+        #000 35%,
+        transparent 78%
+    );
+}
+
+[data-theme="dark"] .landing-hero-grid {
+    background-image:
+        linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+}
+
+[data-theme="light"] .landing-hero-grid {
+    background-image:
+        linear-gradient(to right, rgba(16, 23, 32, 0.05) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(16, 23, 32, 0.05) 1px, transparent 1px);
+}
+
+/* Staggered entrance for hero elements */
+@keyframes hero-rise {
+    from {
+        opacity: 0;
+        transform: translateY(16px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.landing-hero-rise {
+    animation: hero-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.hero-delay-1 {
+    animation-delay: 0.06s;
+}
+.hero-delay-2 {
+    animation-delay: 0.14s;
+}
+.hero-delay-3 {
+    animation-delay: 0.22s;
+}
+.hero-delay-4 {
+    animation-delay: 0.3s;
+}
+
+/* ── Touch-friendly overrides ── */
+
+@media (hover: none) and (pointer: coarse) {
+    a.card:hover,
+    button.card:hover,
+    .card-hover:hover {
+        transform: none;
+        box-shadow: none;
+    }
+
+    a.card:active,
+    button.card:active,
+    .card-hover:active {
+        transform: scale(0.98);
+        transition-duration: 0.1s;
+    }
+
+    .btn-circle {
+        min-width: 44px;
+        min-height: 44px;
+    }
+}
+
+/* ── Mobile typography ── */
+
+@media (max-width: 640px) {
+    .card .card-body {
+        padding: 1rem;
+    }
+}
+
+/* ── Safe area for notched devices ── */
+
+.safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .landing-hero-rise,
+    .animate-fade-up {
+        animation: none;
+    }
+}

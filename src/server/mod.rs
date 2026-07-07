@@ -6,5 +6,6 @@ pub mod config;
 pub mod db;
 pub mod mcp;
 pub mod oauth;
+pub mod pwa;
 pub mod security;
 pub mod state;

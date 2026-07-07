@@ -30,10 +30,31 @@ const THEME_BOOTSTRAP_JS: &str = r#"
         root.setAttribute('data-color-mode', dark ? 'dark' : 'light');
         root.style.colorScheme = dark ? 'dark' : 'light';
     };
+    var stored = null;
+    try { stored = localStorage.getItem('theme'); } catch (e) {}
     var mql = window.matchMedia('(prefers-color-scheme: dark)');
-    apply(mql.matches);
-    mql.addEventListener('change', function (e) { apply(e.matches); });
+    if (stored === 'dark' || stored === 'light') {
+        apply(stored === 'dark');
+    } else {
+        apply(mql.matches);
+    }
+    mql.addEventListener('change', function (e) {
+        var s = null;
+        try { s = localStorage.getItem('theme'); } catch (e) {}
+        if (s !== 'dark' && s !== 'light') { apply(e.matches); }
+    });
 })();
+"#;
+
+/// Registers the service worker (`/sw.js`) once the page has loaded, enabling
+/// PWA install. The worker itself is inert on localhost, so this is safe to
+/// emit in every build.
+const SW_REGISTER_JS: &str = r#"
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+        navigator.serviceWorker.register('/sw.js').catch(function () {});
+    });
+}
 "#;
 
 /// Client-side authentication state.
@@ -121,7 +142,7 @@ async fn main() {
     // Session layer
     let session_layer = SessionManagerLayer::new(redis_store)
         .with_secure(app_state.config.secure_cookies)
-        .with_expiry(Expiry::OnInactivity(Duration::hours(24)))
+        .with_expiry(Expiry::OnInactivity(Duration::days(7)))
         .with_signed(
             tower_sessions::cookie::Key::try_from(app_state.secrets.session_secret.as_slice())
                 .expect("Invalid session secret"),
@@ -165,6 +186,8 @@ async fn main() {
         .merge(server::mcp::mcp_router(app_state.clone(), trust_proxy))
         // Polar billing webhook (see src/server/billing).
         .merge(server::billing::billing_router(trust_proxy))
+        // PWA manifest, service worker, and app icons (see src/server/pwa).
+        .merge(server::pwa::pwa_router())
         .layer(session_layer)
         .layer(CompressionLayer::new())
         .layer(Extension(app_state))
@@ -239,7 +262,16 @@ fn App() -> Element {
         document::Link { rel: "icon", href: FAVICON }
         document::Link { rel: "stylesheet", href: MAIN_CSS }
         document::Link { rel: "stylesheet", href: TAILWIND_CSS }
+        // PWA: installable web app metadata (see src/server/pwa.rs).
+        document::Link { rel: "manifest", href: "/manifest.webmanifest" }
+        document::Link { rel: "apple-touch-icon", href: "/apple-touch-icon.png" }
+        document::Meta { name: "theme-color", content: "#0a0e14" }
+        document::Meta { name: "mobile-web-app-capable", content: "yes" }
+        document::Meta { name: "apple-mobile-web-app-capable", content: "yes" }
+        document::Meta { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" }
+        document::Meta { name: "apple-mobile-web-app-title", content: "SaaS Template" }
         document::Script { {THEME_BOOTSTRAP_JS} }
+        document::Script { {SW_REGISTER_JS} }
         Router::<routes::Route> {}
         ToastProvider {}
     }

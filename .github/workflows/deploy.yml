@@ -1,0 +1,84 @@
+name: Build and deploy
+
+# Builds the Rust/WASM app OUTSIDE Docker (so cargo caching works), then the
+# Docker image just packages the artifacts (see Dockerfile) and is pushed to a
+# container registry. Finally the host (e.g. Coolify) is told to pull + redeploy.
+# The deploy target never compiles anything.
+#
+# Runs alongside ci.yml (fmt/clippy/test). A non-compiling commit fails the
+# bundle step here, so it never pushes/deploys.
+#
+# Configure these repo settings before enabling (Settings → Secrets and variables):
+#   Variables: REGISTRY (e.g. ghcr.io), REGISTRY_USERNAME, COOLIFY_DEPLOY_URL
+#   Secrets:   REGISTRY_PASSWORD, COOLIFY_TOKEN
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ${{ vars.REGISTRY }}
+  IMAGE_NAME: dx-saas-template
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          # rust-toolchain.toml pins the channel; this adds the wasm target.
+          toolchain: 1.94.0
+          targets: wasm32-unknown-unknown
+      - uses: rui314/setup-mold@v1
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install Dioxus CLI
+        uses: taiki-e/install-action@v2
+        with:
+          tool: dioxus-cli@0.7.9
+
+      - name: Generate Tailwind CSS
+        run: |
+          bun install --frozen-lockfile
+          bunx @tailwindcss/cli -i tailwind.css -o assets/tailwind.css
+
+      - name: Build web bundle
+        run: dx bundle --web --release
+
+      # Docker build just packages the prebuilt artifacts (see Dockerfile).
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ vars.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      # Optional: tell your host (e.g. Coolify) to pull the new image and redeploy.
+      - name: Trigger deploy
+        if: ${{ vars.COOLIFY_DEPLOY_URL != '' }}
+        run: |
+          curl --fail --silent --show-error \
+            "${{ vars.COOLIFY_DEPLOY_URL }}" \
+            --header "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}"

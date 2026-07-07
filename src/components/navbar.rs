@@ -1,4 +1,5 @@
 use dioxus::prelude::*;
+use dioxus_free_icons::{Icon, icons::ld_icons::*};
 
 use crate::UserAuthState;
 use crate::routes::Route;
@@ -9,11 +10,14 @@ pub fn Navbar() -> Element {
     let user_auth = use_context::<Signal<UserAuthState>>();
 
     rsx! {
-        div { class: "navbar bg-base-200 border-b border-base-300 px-4 lg:px-8",
+        div { class: "navbar glass-panel border-b border-base-300 px-4 lg:px-8 sticky top-0 z-30",
             div { class: "flex-1",
                 Link {
                     to: Route::Home {},
-                    class: "text-xl font-semibold tracking-tight hover:opacity-80 transition-opacity",
+                    class: "inline-flex items-center gap-2 text-xl font-semibold tracking-tight hover:opacity-80 transition-opacity",
+                    span { class: "inline-flex items-center justify-center w-7 h-7 rounded-lg bg-primary/10 text-primary",
+                        Icon { icon: LdLayers, width: 16, height: 16 }
+                    }
                     "SaaS Template"
                 }
             }
@@ -38,7 +42,7 @@ pub fn Navbar() -> Element {
                             li {
                                 Link {
                                     to: Route::Dashboard {},
-                                    class: "btn btn-primary btn-sm rounded-lg font-medium",
+                                    class: "btn btn-primary btn-sm btn-strong rounded-lg font-medium",
                                     "Dashboard"
                                 }
                             }
@@ -47,7 +51,7 @@ pub fn Navbar() -> Element {
                             li {
                                 Link {
                                     to: Route::LoginPage { redirect_url: "/dashboard".to_string() },
-                                    class: "btn btn-primary btn-sm rounded-lg font-medium",
+                                    class: "btn btn-primary btn-sm btn-strong rounded-lg font-medium",
                                     "Sign In"
                                 }
                             }
