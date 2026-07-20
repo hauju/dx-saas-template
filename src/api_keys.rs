@@ -4,6 +4,7 @@
 
 use dioxus::prelude::*;
 
+use crate::components::toast::{ToastLevel, show_toast};
 use crate::models::api_key::{ApiKeyInfo, NewApiKey};
 
 // ============================================================================
@@ -86,6 +87,7 @@ pub fn ApiKeysCard() -> Element {
                     new_token.set(Some(created.token));
                     name.set(String::new());
                     refresh += 1;
+                    show_toast("New API key created — copy it now", ToastLevel::Success);
                 }
                 Err(e) => error.set(Some(e.to_string())),
             }
@@ -185,6 +187,7 @@ fn ApiKeyRow(
         spawn(async move {
             if revoke_api_key(id).await.is_ok() {
                 on_revoked.call(());
+                show_toast("API key revoked", ToastLevel::Success);
             }
             revoking.set(false);
         });

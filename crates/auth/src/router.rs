@@ -29,7 +29,7 @@ use crate::state::AuthState;
 pub fn auth_router(auth_config: AuthConfig, auth_state: AuthState) -> Router {
     let rate_limiter = AuthRateLimiter::new(20);
 
-    Router::new()
+    let router = Router::new()
         // Logout (POST to prevent forced-logout via cross-site image/link tags)
         .route("/auth/logout", post(session::logout))
         // Session API v2 (custom login: auto-detect passkey/OTP)
@@ -61,7 +61,14 @@ pub fn auth_router(auth_config: AuthConfig, auth_state: AuthState) -> Router {
         .route(
             "/auth/session/accept-tos",
             post(handlers::accept_tos_handler),
-        )
+        );
+
+    // Development-only login bypass (see handlers::dev_login). Compiled out of
+    // release builds; also requires DEV_LOGIN=true at runtime.
+    #[cfg(debug_assertions)]
+    let router = router.route("/auth/dev-login", post(handlers::dev_login_handler));
+
+    router
         // Security layers (outermost → innermost):
         // 1. Rate limiting: 20 requests/minute per IP across all auth endpoints
         .layer(axum::middleware::from_fn(rate_limit_middleware))
