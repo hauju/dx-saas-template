@@ -124,7 +124,10 @@ docker compose up -d
 cargo sqlx prepare -- --no-default-features --features server
 ```
 
-If you forget, the next build fails on the query whose cached entry is missing.
+Editing a query without re-preparing fails the next build. Editing a **migration**
+without re-preparing does not — cached entries are keyed by the query text, so
+untouched queries keep matching now-stale metadata and compile fine, failing only
+at runtime. CI guards this by building against a real database.
 </Warning>
 
 ## Renaming the project

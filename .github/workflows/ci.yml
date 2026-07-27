@@ -61,13 +61,27 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Node deps
+        run: bun install --frozen-lockfile
+
+      # The app crate's asset!() calls fail to compile if the stylesheet is
+      # absent, and it is generated rather than committed.
+      - name: Build Tailwind
+        run: bunx @tailwindcss/cli -i tailwind.css -o assets/tailwind.css
+
       - name: cargo test (workspace crates)
         run: cargo test --workspace --exclude dx-saas-template
 
       # The app crate is excluded above because a bare --workspace build resolves
       # it with its default (wasm client) feature, which can't run as a test
-      # binary. Its tests cover the OAuth redirect-URI allowlist, proxy-header
-      # trust, and HSTS gating, so run them explicitly against the server feature.
+      # binary. Its suite is mostly database-backed: `#[sqlx::test]` gives each
+      # case its own freshly migrated database on the service below, so cases
+      # stay isolated and can run in parallel.
       - name: cargo test (app crate, server feature)
         run: cargo test -p dx-saas-template --no-default-features --features server
 
@@ -86,3 +100,65 @@ jobs:
 
       - name: cargo audit
         run: cargo audit
+
+  # The other jobs build offline against the committed `.sqlx` metadata, which
+  # catches a query whose text changed without a matching `cargo sqlx prepare`.
+  # It does NOT catch the other direction: cached entries are keyed by a hash of
+  # the SQL string, so changing the *schema* while leaving a query untouched
+  # leaves a stale entry that still matches and still compiles — then fails at
+  # runtime. Building against a real database closes that gap, because the
+  # macros re-validate every query against the live schema.
+  schema:
+    name: queries match the schema
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: dx_saas
+          POSTGRES_PASSWORD: dx_saas
+          POSTGRES_DB: dx_saas
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dx_saas -d dx_saas"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://dx_saas:dx_saas@localhost:5432/dx_saas
+      # `.cargo/config.toml` defaults this to true so a fresh clone builds with
+      # no database. This job exists precisely to check against a real one.
+      SQLX_OFFLINE: "false"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.94.0
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Node deps
+        run: bun install --frozen-lockfile
+
+      # asset!() requires the file to exist, even for a server-only build.
+      - name: Build Tailwind
+        run: bunx @tailwindcss/cli -i tailwind.css -o assets/tailwind.css
+
+      # Applied with psql rather than sqlx-cli: only the resulting schema matters
+      # here, not the migration bookkeeping, and this avoids installing the CLI.
+      - name: Apply migrations
+        run: |
+          for f in migrations/*.sql; do
+            echo "applying $f"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - name: Verify every query against the live schema
+        run: cargo check --no-default-features --features server

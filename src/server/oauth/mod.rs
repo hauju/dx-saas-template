@@ -48,10 +48,12 @@ pub fn redirect_uri_allowed(uri: &str) -> bool {
 /// Build the OAuth router. `trust_proxy_headers` is forwarded to the per-IP
 /// rate limiter so the client IP is read correctly behind a reverse proxy.
 pub fn oauth_router(pool: sqlx::PgPool, trust_proxy_headers: bool) -> Router {
-    // Shared counter: token issuance must not scale with replica count.
-    let limiter = IpRateLimiter::shared_per_minute(pool, "oauth", 60, trust_proxy_headers);
-
-    Router::new()
+    // Discovery metadata is static JSON that touches no database, and a client
+    // re-runs discovery freely. Keeping it on an in-process limiter avoids a
+    // pointless round-trip per request, and — more importantly — stops discovery
+    // traffic from draining the budget that protects token issuance below.
+    let metadata_limiter = IpRateLimiter::per_minute(120, trust_proxy_headers);
+    let metadata_routes = Router::new()
         .route(
             "/.well-known/oauth-protected-resource",
             get(metadata::protected_resource),
@@ -68,13 +70,22 @@ pub fn oauth_router(pool: sqlx::PgPool, trust_proxy_headers: bool) -> Router {
             "/.well-known/openid-configuration",
             get(metadata::authorization_server),
         )
+        .layer(axum::middleware::from_fn(ip_rate_limit))
+        .layer(Extension(metadata_limiter));
+
+    // Shared counter: client registration and token issuance must not scale with
+    // replica count.
+    let limiter = IpRateLimiter::shared_per_minute(pool, "oauth", 60, trust_proxy_headers);
+    let server_routes = Router::new()
         .route("/oauth/register", post(register::register))
         .route("/oauth/authorize", get(authorize::authorize))
         .route("/oauth/authorize/resume", get(authorize::resume))
         .route("/oauth/authorize/decision", post(authorize::decision))
         .route("/oauth/token", post(token::token))
         .layer(axum::middleware::from_fn(ip_rate_limit))
-        .layer(Extension(limiter))
+        .layer(Extension(limiter));
+
+    metadata_routes.merge(server_routes)
 }
 
 #[cfg(test)]

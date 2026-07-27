@@ -15,6 +15,35 @@ impl AppAuthUserStore {
     pub fn new(state: AppState) -> Self {
         Self { state }
     }
+
+    /// Re-read the user that won a concurrent-creation race.
+    ///
+    /// Matches the lookup order in `lookup_or_create_user`: by `sub` first, then
+    /// by `email` (the IdP-migration case, where the winner may hold a different
+    /// subject for the same address).
+    async fn adopt_existing(&self, user: &NewAuthUser) -> AuthResult<AuthUser> {
+        let db_err = |e| AuthError::ServerStateError(format!("DB error: {e}"));
+
+        if let Some(existing) = user::find_by_sub(&self.state.db, &user.sub)
+            .await
+            .map_err(db_err)?
+        {
+            return Ok(user_entity_to_auth_user(existing));
+        }
+
+        if let Some(existing) = user::find_by_email(&self.state.db, &user.email)
+            .await
+            .map_err(db_err)?
+        {
+            return Ok(user_entity_to_auth_user(existing));
+        }
+
+        // The insert was rejected for a uniqueness reason we can't attribute —
+        // don't paper over it.
+        Err(AuthError::ServerStateError(
+            "user creation conflicted but no matching user was found".to_string(),
+        ))
+    }
 }
 
 #[async_trait::async_trait]
@@ -49,8 +78,23 @@ impl AuthUserStore for AppAuthUserStore {
             user.email,
         )
         .fetch_one(&self.state.db.pool)
-        .await
-        .map_err(|e| AuthError::ServerStateError(format!("DB insert error: {e}")))?;
+        .await;
+
+        let row = match row {
+            Ok(row) => row,
+            // `lookup_or_create_user` checks for an existing user before calling
+            // us, but two concurrent first-time logins for the same account can
+            // both pass that check and both insert. The unique constraints on
+            // `sub` and `email` mean exactly one wins. The loser's user does now
+            // exist, so adopt it rather than failing an otherwise valid login.
+            Err(sqlx::Error::Database(ref e)) if e.is_unique_violation() => {
+                tracing::info!("concurrent user creation lost the race; adopting existing row");
+                return self.adopt_existing(&user).await;
+            }
+            Err(e) => {
+                return Err(AuthError::ServerStateError(format!("DB insert error: {e}")));
+            }
+        };
 
         let entity = UserEntity {
             id,
@@ -172,3 +216,4 @@ fn user_entity_to_auth_user(entity: UserEntity) -> AuthUser {
         tos_acceptance: None,
     }
 }
+

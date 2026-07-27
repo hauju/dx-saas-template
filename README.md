@@ -109,8 +109,12 @@ docker compose up -d
 cargo sqlx prepare -- --no-default-features --features server
 ```
 
-Forgetting is not silent — the next build fails on the query whose cached entry is
-missing. Install the CLI with
+Editing a query without re-preparing fails the next build, since no cached entry
+matches it. Editing the *schema* without re-preparing does not: entries are keyed
+by the query text, so untouched queries keep matching stale metadata and compile
+fine. CI's `schema` job catches that by building against a real database.
+
+Install the CLI with
 `cargo install sqlx-cli --no-default-features --features rustls,postgres`.
 
 ## CI gates
