@@ -131,3 +131,129 @@ pub async fn verify(db: &Database, token: &str) -> Result<Option<ApiKeyEntity>, 
 
     Ok(None)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::server::test_support::seed_user;
+    use sqlx::PgPool;
+
+    #[sqlx::test]
+    async fn mints_a_token_whose_prefix_is_stored_but_whose_secret_is_not(pool: PgPool) {
+        let db = Database::from_pool(pool);
+        let user = seed_user(&db, "mint").await;
+
+        let (token, entity) = create(&db, user, "CLI").await.unwrap();
+
+        assert!(
+            token.starts_with("oat_"),
+            "token should carry the scheme prefix"
+        );
+        assert_eq!(entity.prefix, crypto::api_key_prefix(&token).unwrap());
+        // The whole point of the scheme: a database leak must not yield tokens.
+        assert!(
+            !entity.hash.contains(&token),
+            "the raw token must never be stored"
+        );
+        assert_ne!(entity.hash, token);
+        assert!(
+            entity.created_at.timestamp() > 0,
+            "created_at comes from the DB default"
+        );
+    }
+
+    #[sqlx::test]
+    async fn verify_matches_the_right_key_and_stamps_usage(pool: PgPool) {
+        let db = Database::from_pool(pool);
+        let user = seed_user(&db, "verify").await;
+        let (token, entity) = create(&db, user, "CLI").await.unwrap();
+
+        assert!(
+            entity.last_used_at.is_none(),
+            "a fresh key has never been used"
+        );
+
+        let found = verify(&db, &token)
+            .await
+            .unwrap()
+            .expect("token should verify");
+        assert_eq!(found.id, entity.id);
+
+        // The stamp is written after the match, so re-read to observe it.
+        let stamped = verify(&db, &token).await.unwrap().unwrap();
+        assert!(
+            stamped.last_used_at.is_some(),
+            "verify should stamp last_used_at"
+        );
+    }
+
+    #[sqlx::test]
+    async fn verify_rejects_unknown_and_malformed_tokens(pool: PgPool) {
+        let db = Database::from_pool(pool);
+        let user = seed_user(&db, "reject").await;
+        let (token, _) = create(&db, user, "CLI").await.unwrap();
+
+        assert!(verify(&db, "not-an-oat-token").await.unwrap().is_none());
+        assert!(
+            verify(&db, "oat_completelyBogusValue")
+                .await
+                .unwrap()
+                .is_none()
+        );
+
+        // Same prefix, wrong secret: the prefix narrows the search, the Argon2
+        // hash is what actually authenticates. Swapping the tail must fail.
+        let forged = format!("{}tampered", &token[..16]);
+        assert!(verify(&db, &forged).await.unwrap().is_none());
+    }
+
+    #[sqlx::test]
+    async fn revoked_keys_stop_verifying_and_stop_listing(pool: PgPool) {
+        let db = Database::from_pool(pool);
+        let user = seed_user(&db, "revoke").await;
+        let (token, entity) = create(&db, user, "CLI").await.unwrap();
+
+        assert!(revoke(&db, user, entity.id).await.unwrap());
+        assert!(
+            verify(&db, &token).await.unwrap().is_none(),
+            "revoked key must not authenticate"
+        );
+        assert!(list(&db, user).await.unwrap().is_empty());
+
+        // Revoking again changes nothing, so it reports no rows affected.
+        assert!(!revoke(&db, user, entity.id).await.unwrap());
+    }
+
+    #[sqlx::test]
+    async fn a_user_cannot_revoke_another_users_key(pool: PgPool) {
+        let db = Database::from_pool(pool);
+        let owner = seed_user(&db, "owner").await;
+        let attacker = seed_user(&db, "attacker").await;
+        let (token, entity) = create(&db, owner, "CLI").await.unwrap();
+
+        assert!(
+            !revoke(&db, attacker, entity.id).await.unwrap(),
+            "ownership must be enforced"
+        );
+        assert!(
+            verify(&db, &token).await.unwrap().is_some(),
+            "the key must still work"
+        );
+    }
+
+    #[sqlx::test]
+    async fn list_is_scoped_to_its_owner_and_newest_first(pool: PgPool) {
+        let db = Database::from_pool(pool);
+        let a = seed_user(&db, "list-a").await;
+        let b = seed_user(&db, "list-b").await;
+
+        create(&db, a, "first").await.unwrap();
+        create(&db, a, "second").await.unwrap();
+        create(&db, b, "other user's key").await.unwrap();
+
+        let keys = list(&db, a).await.unwrap();
+        assert_eq!(keys.len(), 2, "must not leak another user's keys");
+        assert_eq!(keys[0].name, "second", "newest first");
+        assert!(keys.iter().all(|k| k.user_id == a));
+    }
+}

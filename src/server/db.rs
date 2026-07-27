@@ -34,4 +34,13 @@ impl Database {
 
         Ok(Self { pool })
     }
+
+    /// Wrap an already-connected pool.
+    ///
+    /// Used by tests, where `#[sqlx::test]` hands each case its own freshly
+    /// migrated database and there is no URL to connect to.
+    #[cfg(test)]
+    pub fn from_pool(pool: PgPool) -> Self {
+        Self { pool }
+    }
 }

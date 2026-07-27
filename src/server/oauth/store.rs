@@ -146,3 +146,183 @@ pub async fn take_code(db: &Database, code: &str) -> Result<Option<OAuthCodeEnti
     .await?;
     Ok(row)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::server::test_support::seed_user;
+    use sqlx::PgPool;
+
+    fn client_id(n: &str) -> String {
+        format!("mcp_test_{n}")
+    }
+
+    #[sqlx::test]
+    async fn registers_a_client_and_round_trips_the_redirect_uri_array(pool: PgPool) {
+        let db = Database::from_pool(pool);
+        let uris = vec![
+            "http://localhost:9999/callback".to_string(),
+            "https://claude.ai/api/mcp/auth_callback".to_string(),
+        ];
+
+        let created = insert_client(
+            &db,
+            Uuid::new_v4(),
+            &client_id("a"),
+            &uris,
+            Some("Test Client"),
+        )
+        .await
+        .unwrap();
+        assert!(
+            created.created_at.timestamp() > 0,
+            "created_at comes from the DB default"
+        );
+
+        let found = find_client(&db, &client_id("a")).await.unwrap().unwrap();
+        // The allowlist is the security boundary for the whole OAuth flow, so
+        // the TEXT[] must survive the round trip exactly — order included.
+        assert_eq!(found.redirect_uris, uris);
+        assert_eq!(found.client_name.as_deref(), Some("Test Client"));
+        assert_eq!(found.id, created.id);
+    }
+
+    #[sqlx::test]
+    async fn unknown_client_is_none(pool: PgPool) {
+        let db = Database::from_pool(pool);
+        assert!(
+            find_client(&db, "mcp_never_registered")
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[sqlx::test]
+    async fn a_code_can_be_consumed_exactly_once(pool: PgPool) {
+        let db = Database::from_pool(pool);
+        let user = seed_user(&db, "code").await;
+        insert_code(
+            &db,
+            Uuid::new_v4(),
+            "code-1",
+            &client_id("b"),
+            "http://cb",
+            "challenge",
+            user,
+            "mcp",
+            60.0,
+        )
+        .await
+        .unwrap();
+
+        let first = take_code(&db, "code-1").await.unwrap();
+        assert!(first.is_some(), "the first exchange succeeds");
+        assert_eq!(first.unwrap().code_challenge, "challenge");
+
+        // Replay must find nothing — this is what stops a stolen code being
+        // redeemed twice.
+        assert!(take_code(&db, "code-1").await.unwrap().is_none());
+    }
+
+    #[sqlx::test]
+    async fn concurrent_exchanges_of_one_code_yield_exactly_one_winner(pool: PgPool) {
+        let db = Database::from_pool(pool);
+        let user = seed_user(&db, "race").await;
+        insert_code(
+            &db,
+            Uuid::new_v4(),
+            "code-race",
+            &client_id("c"),
+            "http://cb",
+            "challenge",
+            user,
+            "mcp",
+            60.0,
+        )
+        .await
+        .unwrap();
+
+        // DELETE … RETURNING is atomic, so racing token requests can't both win.
+        let (a, b) = tokio::join!(take_code(&db, "code-race"), take_code(&db, "code-race"));
+        let winners = [a.unwrap().is_some(), b.unwrap().is_some()]
+            .iter()
+            .filter(|w| **w)
+            .count();
+        assert_eq!(winners, 1, "exactly one concurrent exchange may succeed");
+    }
+
+    #[sqlx::test]
+    async fn inserting_a_code_sweeps_expired_ones(pool: PgPool) {
+        let db = Database::from_pool(pool);
+        let user = seed_user(&db, "sweep").await;
+
+        // A negative TTL lands in the past, standing in for a code whose
+        // authorization was started and then abandoned.
+        insert_code(
+            &db,
+            Uuid::new_v4(),
+            "stale",
+            &client_id("d"),
+            "http://cb",
+            "ch",
+            user,
+            "mcp",
+            -1.0,
+        )
+        .await
+        .unwrap();
+        insert_code(
+            &db,
+            Uuid::new_v4(),
+            "fresh",
+            &client_id("d"),
+            "http://cb",
+            "ch",
+            user,
+            "mcp",
+            60.0,
+        )
+        .await
+        .unwrap();
+
+        // Mongo's TTL index used to reap these; the sweep on insert replaces it.
+        let remaining: Vec<String> = sqlx::query_scalar("SELECT code FROM oauth_codes")
+            .fetch_all(&db.pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            remaining,
+            vec!["fresh"],
+            "the abandoned code must not accumulate"
+        );
+    }
+
+    #[sqlx::test]
+    async fn deleting_a_user_takes_their_codes_with_them(pool: PgPool) {
+        let db = Database::from_pool(pool);
+        let user = seed_user(&db, "cascade").await;
+        insert_code(
+            &db,
+            Uuid::new_v4(),
+            "c",
+            &client_id("e"),
+            "http://cb",
+            "ch",
+            user,
+            "mcp",
+            60.0,
+        )
+        .await
+        .unwrap();
+
+        sqlx::query("DELETE FROM users WHERE id = $1")
+            .bind(user)
+            .execute(&db.pool)
+            .await
+            .unwrap();
+
+        // ON DELETE CASCADE: no orphaned credentials outliving their owner.
+        assert!(take_code(&db, "c").await.unwrap().is_none());
+    }
+}

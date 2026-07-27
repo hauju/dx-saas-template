@@ -127,5 +127,13 @@ server = [
 ]
 sentry = ["server", "dep:sentry"]
 
+[dev-dependencies]
+# `#[sqlx::test]` builds on tokio's test harness and hands each case its own
+# freshly migrated database, so the DB-backed tests need a multi-thread runtime.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+# The HTTP tests drive a real server on a loopback port rather than calling
+# handlers directly, so the middleware stack is exercised as deployed.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
 [build-dependencies]
 dioxus-docs-kit-build = "0.4.0"

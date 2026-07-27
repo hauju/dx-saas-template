@@ -69,11 +69,17 @@ pub fn auth_router(auth_config: AuthConfig, auth_state: AuthState) -> Router {
     let router = router.route("/auth/dev-login", post(handlers::dev_login_handler));
 
     router
-        // Security layers (outermost → innermost):
-        // 1. Rate limiting: 20 requests/minute per IP across all auth endpoints
+        // NOTE: axum applies the LAST `.layer()` outermost, so these run in the
+        // reverse of the order written — CSRF first, then rate limiting.
+        //
+        // That ordering is deliberate: a cross-origin POST is rejected before it
+        // can consume any of the per-IP quota or reach the database-backed
+        // counter, so junk traffic can't exhaust a real user's budget.
+        //
+        // 2nd: rate limiting — 20 requests/minute per IP across auth endpoints.
         .layer(axum::middleware::from_fn(rate_limit_middleware))
         .layer(Extension(rate_limiter))
-        // 2. CSRF: validate Origin/Referer on POST requests
+        // 1st: CSRF — validate Origin/Referer on POST requests.
         .layer(axum::middleware::from_fn(csrf_origin_check))
         // AuthConfig and AuthState available to all handlers via Extension
         .layer(Extension(auth_config))

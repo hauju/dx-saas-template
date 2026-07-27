@@ -152,3 +152,130 @@ async fn apply_subscription(db: &Database, data: serde_json::Value) -> Result<()
     tracing::info!(user_id = %user_id, status = %info.status, "subscription updated from Polar");
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::server::db::Database;
+    use crate::server::test_support::seed_user;
+    use crate::server::user;
+    use sqlx::PgPool;
+
+    fn event(reference_id: &str, status: &str) -> serde_json::Value {
+        serde_json::json!({
+            "id": "sub_test",
+            "customer_id": "cus_test",
+            "status": status,
+            "current_period_end": "2027-01-01T00:00:00Z",
+            "metadata": { "reference_id": reference_id },
+            "product": { "metadata": { "TIER": "pro" } },
+        })
+    }
+
+    #[sqlx::test]
+    async fn a_subscription_event_lands_on_the_user(pool: PgPool) {
+        let db = Database::from_pool(pool);
+        let id = seed_user(&db, "billing").await;
+
+        apply_subscription(&db, event(&id.to_string(), "active"))
+            .await
+            .unwrap();
+
+        let stored = user::find_by_id(&db, id)
+            .await
+            .unwrap()
+            .unwrap()
+            .subscription
+            .unwrap();
+        assert_eq!(stored.subscription_id, "sub_test");
+        assert_eq!(stored.customer_id, "cus_test");
+        assert_eq!(stored.status, "active");
+        assert_eq!(
+            stored.tier.as_deref(),
+            Some("pro"),
+            "tier is read from product metadata"
+        );
+        assert!(
+            stored.current_period_end.is_some(),
+            "the period end is parsed to millis"
+        );
+        assert!(
+            require_active(&Some(stored)).is_ok(),
+            "an active subscription unlocks gating"
+        );
+    }
+
+    #[sqlx::test]
+    async fn a_cancelled_subscription_closes_the_gate(pool: PgPool) {
+        let db = Database::from_pool(pool);
+        let id = seed_user(&db, "cancel").await;
+
+        apply_subscription(&db, event(&id.to_string(), "active"))
+            .await
+            .unwrap();
+        apply_subscription(&db, event(&id.to_string(), "canceled"))
+            .await
+            .unwrap();
+
+        let stored = user::find_by_id(&db, id)
+            .await
+            .unwrap()
+            .unwrap()
+            .subscription
+            .unwrap();
+        assert_eq!(stored.status, "canceled", "the later event wins");
+        assert!(
+            matches!(
+                require_active(&Some(stored)),
+                Err(AppError::SubscriptionRequired(_))
+            ),
+            "a cancelled subscription must fail the gate"
+        );
+    }
+
+    #[sqlx::test]
+    async fn an_unlinkable_event_is_ignored_rather_than_failing(pool: PgPool) {
+        let db = Database::from_pool(pool);
+        let id = seed_user(&db, "unlinkable").await;
+
+        // Polar retries failed webhooks, so events we can't attribute must be
+        // accepted and dropped rather than 500ing forever.
+        apply_subscription(&db, event("not-a-uuid", "active"))
+            .await
+            .unwrap();
+        apply_subscription(&db, event(&uuid::Uuid::new_v4().to_string(), "active"))
+            .await
+            .unwrap();
+
+        let mut no_reference = event(&id.to_string(), "active");
+        no_reference["metadata"] = serde_json::json!({});
+        apply_subscription(&db, no_reference).await.unwrap();
+
+        assert!(
+            user::find_by_id(&db, id)
+                .await
+                .unwrap()
+                .unwrap()
+                .subscription
+                .is_none(),
+            "no user should have been touched"
+        );
+    }
+
+    #[sqlx::test]
+    async fn a_malformed_payload_is_a_validation_error(pool: PgPool) {
+        let db = Database::from_pool(pool);
+        let err = apply_subscription(&db, serde_json::json!({ "nonsense": true }))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::Validation(_)));
+    }
+
+    #[test]
+    fn gating_rejects_a_missing_subscription() {
+        assert!(matches!(
+            require_active(&None),
+            Err(AppError::SubscriptionRequired(_))
+        ));
+    }
+}

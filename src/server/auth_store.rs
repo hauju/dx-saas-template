@@ -217,3 +217,126 @@ fn user_entity_to_auth_user(entity: UserEntity) -> AuthUser {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::server::db::Database;
+    use crate::server::test_support::{seed_user, test_state};
+    use sqlx::PgPool;
+    use std::sync::Arc;
+
+    fn new_user(n: &str) -> NewAuthUser {
+        NewAuthUser {
+            sub: format!("sub-{n}"),
+            email: format!("{n}@example.test"),
+        }
+    }
+
+    #[sqlx::test]
+    async fn creates_a_user_with_database_assigned_timestamps(pool: PgPool) {
+        let store = AppAuthUserStore::new(test_state(Database::from_pool(pool)));
+
+        let created = store.create_user(new_user("fresh")).await.unwrap();
+        assert_eq!(created.email, "fresh@example.test");
+        assert_eq!(created.sub, "sub-fresh");
+        assert!(
+            Uuid::parse_str(&created.id).is_ok(),
+            "the id handed to callers must be a parseable UUID"
+        );
+
+        let found = store.get_user_by_sub("sub-fresh").await.unwrap().unwrap();
+        assert_eq!(found.id, created.id);
+    }
+
+    #[sqlx::test]
+    async fn lookups_miss_cleanly(pool: PgPool) {
+        let store = AppAuthUserStore::new(test_state(Database::from_pool(pool)));
+        assert!(store.get_user_by_sub("nobody").await.unwrap().is_none());
+        assert!(
+            store
+                .get_user_by_email("nobody@example.test")
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[sqlx::test]
+    async fn rebinds_a_user_to_a_new_subject(pool: PgPool) {
+        // The IdP-migration path: same person, new OIDC subject.
+        let db = Database::from_pool(pool);
+        let id = seed_user(&db, "migrating").await;
+        let store = AppAuthUserStore::new(test_state(db));
+
+        store
+            .update_user_sub(&id.to_string(), "sub-new")
+            .await
+            .unwrap();
+
+        assert!(
+            store
+                .get_user_by_sub("sub-migrating")
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            store.get_user_by_sub("sub-new").await.unwrap().unwrap().id,
+            id.to_string()
+        );
+    }
+
+    #[sqlx::test]
+    async fn concurrent_first_time_logins_all_succeed_and_create_one_user(pool: PgPool) {
+        // Two first-time logins for the same account can both pass the
+        // "does this user exist?" check and both try to insert. Exactly one wins
+        // the unique constraint; the losers must adopt the winner's row rather
+        // than failing an otherwise valid login.
+        let db = Database::from_pool(pool.clone());
+        let store = Arc::new(AppAuthUserStore::new(test_state(db)));
+
+        let mut set = tokio::task::JoinSet::new();
+        for _ in 0..12 {
+            let store = store.clone();
+            set.spawn(async move { store.create_user(new_user("racer")).await });
+        }
+
+        let mut ids = Vec::new();
+        while let Some(res) = set.join_next().await {
+            let user = res.unwrap().expect("a login race must not fail the login");
+            ids.push(user.id);
+        }
+
+        assert_eq!(ids.len(), 12, "every concurrent login should succeed");
+        let first = &ids[0];
+        assert!(
+            ids.iter().all(|id| id == first),
+            "all must agree on one user id"
+        );
+
+        let count: i64 = sqlx::query_scalar("SELECT count(*) FROM users")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 1, "exactly one row may exist");
+    }
+
+    #[sqlx::test]
+    async fn a_race_lost_on_email_adopts_the_existing_user(pool: PgPool) {
+        // The winner may hold a different subject for the same address (the
+        // IdP-migration case), so adoption falls back to an email lookup.
+        let db = Database::from_pool(pool);
+        let existing = seed_user(&db, "shared").await;
+        let store = AppAuthUserStore::new(test_state(db));
+
+        let adopted = store
+            .create_user(NewAuthUser {
+                sub: "sub-different".to_string(),
+                email: "shared@example.test".to_string(),
+            })
+            .await
+            .expect("must adopt rather than fail");
+
+        assert_eq!(adopted.id, existing.to_string());
+    }
+}

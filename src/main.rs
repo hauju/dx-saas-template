@@ -72,16 +72,6 @@ pub enum UserAuthState {
 #[cfg(feature = "server")]
 #[tokio::main]
 async fn main() {
-    use std::sync::Arc;
-
-    use axum::Extension;
-    use tower_http::compression::CompressionLayer;
-    use tower_http::trace::TraceLayer;
-    use tower_sessions::cookie::time::Duration;
-    use tower_sessions::{ExpiredDeletion, Expiry, SessionManagerLayer};
-    use tower_sessions_sqlx_store::PostgresStore;
-
-    use server::auth_store::{AppAuthUserStore, AppEmailSender};
     use server::state::AppState;
 
     use tracing_subscriber::layer::SubscriberExt;
@@ -132,102 +122,11 @@ async fn main() {
         .expect("Failed to initialize AppState");
     tracing::info!("AppState initialized");
 
-    // PostgreSQL session store (reuses the application connection pool)
-    let session_store = PostgresStore::new(app_state.db.pool.clone());
-    session_store
-        .migrate()
-        .await
-        .expect("Failed to migrate session store");
+    // Every route and middleware layer lives in server::router so the HTTP
+    // tests can drive the identical stack (see that module).
+    let router = server::router::build(dioxus::server::router(App), app_state).await;
 
-    // Drop elapsed rate-limit windows periodically (see server::rate_limit).
-    server::rate_limit::spawn_sweeper(app_state.db.pool.clone());
-
-    // Prune expired sessions hourly so the table doesn't grow unbounded.
-    let _deletion_task = tokio::task::spawn(
-        session_store
-            .clone()
-            .continuously_delete_expired(tokio::time::Duration::from_secs(60 * 60)),
-    );
-
-    // Session layer
-    let session_layer = SessionManagerLayer::new(session_store)
-        .with_secure(app_state.config.secure_cookies)
-        .with_expiry(Expiry::OnInactivity(Duration::days(7)))
-        .with_signed(
-            tower_sessions::cookie::Key::try_from(app_state.secrets.session_secret.as_slice())
-                .expect("Invalid session secret"),
-        );
-
-    // Auth router
-    let auth_config = auth::AuthConfig {
-        login_page_url: "/login".to_string(),
-        default_post_login_url: "/dashboard".to_string(),
-        dev_login_url: "/login".to_string(),
-        ferriskey_url: app_state.config.ferriskey_url.clone(),
-        ferriskey_issuer_url: app_state.config.ferriskey_issuer_url.clone(),
-        ferriskey_realm: app_state.config.ferriskey_realm.clone(),
-        ferriskey_client_id: app_state.config.ferriskey_client_id.clone(),
-        ferriskey_client_secret: app_state.secrets.ferriskey_client_secret.clone(),
-        base_url: app_state.config.base_url.clone(),
-        trust_proxy_headers: app_state.config.trust_proxy_headers,
-    };
-
-    let auth_state = auth::AuthState {
-        user_store: Arc::new(AppAuthUserStore::new(app_state.clone())),
-        email_sender: Arc::new(AppEmailSender::new(app_state.clone())),
-        jwks_cache: app_state.jwks.clone(),
-        // Count auth attempts in PostgreSQL so the quota is enforced once
-        // across every replica, not once per process.
-        rate_limit_store: Some(Arc::new(server::rate_limit::AppAuthRateLimitStore::new(
-            app_state.db.pool.clone(),
-            auth::AUTH_REQUESTS_PER_MINUTE,
-        ))),
-    };
-
-    let auth_routes = auth::auth_router(auth_config, auth_state);
-
-    // Build the Dioxus server router with layers
     let address = dioxus::cli_config::fullstack_address_or_localhost();
-
-    // HSTS is only safe over HTTPS, so gate it on the same flag as secure cookies.
-    let hsts = app_state.config.secure_cookies;
-    let trust_proxy = app_state.config.trust_proxy_headers;
-    // Global per-IP backstop against abuse; sensitive sub-routers add stricter quotas.
-    let global_rate_limiter = server::security::IpRateLimiter::per_minute(600, trust_proxy);
-
-    let router = dioxus::server::router(App)
-        .merge(auth_routes)
-        // OAuth 2.1 authorization server + MCP connector (see src/server/oauth, mcp).
-        .merge(server::oauth::oauth_router(
-            app_state.db.pool.clone(),
-            trust_proxy,
-        ))
-        .merge(server::mcp::mcp_router(app_state.clone(), trust_proxy))
-        // Polar billing webhook (see src/server/billing).
-        .merge(server::billing::billing_router(
-            app_state.db.pool.clone(),
-            trust_proxy,
-        ))
-        // PWA manifest, service worker, and app icons (see src/server/pwa).
-        .merge(server::pwa::pwa_router())
-        // GET /health — readiness probe used by the Docker HEALTHCHECK.
-        .merge(server::health::health_router())
-        .layer(session_layer)
-        .layer(CompressionLayer::new())
-        .layer(Extension(app_state))
-        // Per-IP rate-limit backstop (Extension must sit outside the middleware).
-        .layer(axum::middleware::from_fn(server::security::ip_rate_limit))
-        .layer(Extension(global_rate_limiter))
-        // Hardening headers on every response (including errors above).
-        .layer(axum::middleware::from_fn(
-            move |req: axum::extract::Request, next: axum::middleware::Next| async move {
-                let mut res = next.run(req).await;
-                server::security::apply_security_headers(res.headers_mut(), hsts);
-                res
-            },
-        ))
-        // Outermost: a request span that records the path only (never the query).
-        .layer(TraceLayer::new_for_http().make_span_with(server::security::redacted_request_span));
 
     tracing::info!("Listening on {address}");
 
