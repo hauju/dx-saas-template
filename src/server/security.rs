@@ -20,6 +20,9 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use governor::{Quota, RateLimiter, state::keyed::DefaultKeyedStateStore};
+use sqlx::PgPool;
+
+use crate::server::rate_limit::SharedRateLimiter;
 
 // ============================================================================
 // Response headers
@@ -81,18 +84,29 @@ pub fn redacted_request_span<B>(req: &axum::http::Request<B>) -> tracing::Span {
 type KeyedLimiter =
     RateLimiter<String, DefaultKeyedStateStore<String>, governor::clock::DefaultClock>;
 
+/// Where the counters live.
+#[derive(Clone)]
+enum Backend {
+    /// Per-process token buckets. No coordination, so an N-replica deployment
+    /// allows up to N× the quota — acceptable for a coarse flood backstop.
+    Local(Arc<KeyedLimiter>),
+    /// Counters in PostgreSQL, shared by every replica. Costs one round-trip
+    /// per request, so reserve it for low-volume routes.
+    Shared(SharedRateLimiter),
+}
+
 /// A reusable per-IP rate limiter, paired with [`ip_rate_limit`] as middleware.
 ///
 /// Insert one as an `Extension` next to the middleware on any router; nested
 /// sub-routers can each carry their own quota.
 #[derive(Clone)]
 pub struct IpRateLimiter {
-    inner: Arc<KeyedLimiter>,
+    backend: Backend,
     trust_proxy_headers: bool,
 }
 
 impl IpRateLimiter {
-    /// Allow `per_minute` requests per client IP per minute.
+    /// Allow `per_minute` requests per client IP per minute, counted in-process.
     ///
     /// `trust_proxy_headers` mirrors `AuthConfig::trust_proxy_headers`: when set,
     /// the leftmost `X-Forwarded-For` hop is used as the client IP; otherwise the
@@ -100,8 +114,42 @@ impl IpRateLimiter {
     pub fn per_minute(per_minute: u32, trust_proxy_headers: bool) -> Self {
         let quota = Quota::per_minute(NonZeroU32::new(per_minute).expect("per_minute must be > 0"));
         Self {
-            inner: Arc::new(RateLimiter::keyed(quota)),
+            backend: Backend::Local(Arc::new(RateLimiter::keyed(quota))),
             trust_proxy_headers,
+        }
+    }
+
+    /// Same quota, but counted in PostgreSQL so it holds across replicas.
+    ///
+    /// `scope` namespaces the keys, so routers with different quotas don't draw
+    /// from the same bucket.
+    pub fn shared_per_minute(
+        pool: PgPool,
+        scope: &str,
+        per_minute: u32,
+        trust_proxy_headers: bool,
+    ) -> Self {
+        Self {
+            backend: Backend::Shared(SharedRateLimiter::per_minute(pool, scope, per_minute)),
+            trust_proxy_headers,
+        }
+    }
+
+    async fn check(&self, key: &str) -> bool {
+        match &self.backend {
+            Backend::Local(limiter) => limiter.check_key(&key.to_string()).is_ok(),
+            // Fail open on database errors: every route behind a shared limiter
+            // needs the same database to serve a real response, so rejecting
+            // here would convert a database blip into a hard outage while
+            // denying an attacker nothing. The global in-process backstop still
+            // applies.
+            Backend::Shared(limiter) => match limiter.check(key).await {
+                Ok(allowed) => allowed,
+                Err(e) => {
+                    tracing::error!("shared rate limit check failed, allowing request: {e}");
+                    true
+                }
+            },
         }
     }
 }
@@ -144,16 +192,15 @@ pub async fn ip_rate_limit(
         limiter.trust_proxy_headers,
     );
 
-    match limiter.inner.check_key(&key) {
-        Ok(_) => next.run(request).await,
-        Err(_) => {
-            tracing::warn!(rate_limit_key = %key, "Rate limit exceeded");
-            (
-                StatusCode::TOO_MANY_REQUESTS,
-                "Too many requests. Please try again later.",
-            )
-                .into_response()
-        }
+    if limiter.check(&key).await {
+        next.run(request).await
+    } else {
+        tracing::warn!(rate_limit_key = %key, "Rate limit exceeded");
+        (
+            StatusCode::TOO_MANY_REQUESTS,
+            "Too many requests. Please try again later.",
+        )
+            .into_response()
     }
 }
 

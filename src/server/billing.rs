@@ -18,8 +18,8 @@ use crate::server::db::Database;
 use crate::server::security::{IpRateLimiter, ip_rate_limit};
 use crate::server::state::AppState;
 
-pub fn billing_router(trust_proxy_headers: bool) -> Router {
-    let limiter = IpRateLimiter::per_minute(120, trust_proxy_headers);
+pub fn billing_router(pool: sqlx::PgPool, trust_proxy_headers: bool) -> Router {
+    let limiter = IpRateLimiter::shared_per_minute(pool, "webhooks", 120, trust_proxy_headers);
     Router::new()
         .route("/webhooks/polar", post(polar_webhook))
         .layer(axum::middleware::from_fn(ip_rate_limit))
@@ -114,7 +114,7 @@ async fn apply_subscription(db: &Database, data: serde_json::Value) -> Result<()
         tracing::warn!(subscription_id = %data.id, "subscription event without reference_id; cannot link to a user");
         return Ok(());
     };
-    let Ok(user_id) = bson::oid::ObjectId::parse_str(reference_id) else {
+    let Ok(user_id) = uuid::Uuid::parse_str(reference_id) else {
         tracing::warn!(
             reference_id,
             "subscription reference_id is not a valid user id"
@@ -138,15 +138,16 @@ async fn apply_subscription(db: &Database, data: serde_json::Value) -> Result<()
         updated_at: chrono::Utc::now().to_rfc3339(),
     };
 
-    let bson_info = bson::to_bson(&info)
+    let json_info = serde_json::to_value(&info)
         .map_err(|e| AppError::Internal(format!("serialize subscription: {e}")))?;
 
-    db.users
-        .update_one(
-            bson::doc! { "_id": user_id },
-            bson::doc! { "$set": { "subscription": bson_info, "updated_at": bson::DateTime::now() } },
-        )
-        .await?;
+    sqlx::query!(
+        "UPDATE users SET subscription = $1, updated_at = NOW() WHERE id = $2",
+        json_info,
+        user_id
+    )
+    .execute(&db.pool)
+    .await?;
 
     tracing::info!(user_id = %user_id, status = %info.status, "subscription updated from Polar");
     Ok(())

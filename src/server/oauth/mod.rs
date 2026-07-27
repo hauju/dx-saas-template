@@ -47,8 +47,9 @@ pub fn redirect_uri_allowed(uri: &str) -> bool {
 
 /// Build the OAuth router. `trust_proxy_headers` is forwarded to the per-IP
 /// rate limiter so the client IP is read correctly behind a reverse proxy.
-pub fn oauth_router(trust_proxy_headers: bool) -> Router {
-    let limiter = IpRateLimiter::per_minute(60, trust_proxy_headers);
+pub fn oauth_router(pool: sqlx::PgPool, trust_proxy_headers: bool) -> Router {
+    // Shared counter: token issuance must not scale with replica count.
+    let limiter = IpRateLimiter::shared_per_minute(pool, "oauth", 60, trust_proxy_headers);
 
     Router::new()
         .route(

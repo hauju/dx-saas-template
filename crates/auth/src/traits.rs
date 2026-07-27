@@ -61,3 +61,22 @@ pub trait AuthEmailSender: Send + Sync + 'static {
         expires_in_minutes: u32,
     ) -> AuthResult<()>;
 }
+
+/// Backs auth rate limiting with shared storage so the quota holds across
+/// replicas.
+///
+/// Optional: when no store is supplied on [`crate::AuthState`], the router falls
+/// back to an in-process limiter, which is correct for a single instance but
+/// allows N× the quota across N replicas.
+///
+/// Kept as a trait (rather than taking a database handle) so this crate stays
+/// independent of the host application's storage layer.
+#[async_trait::async_trait]
+pub trait AuthRateLimitStore: Send + Sync + 'static {
+    /// Record a request against `key` and report whether it is within quota.
+    ///
+    /// The quota itself belongs to the implementation. Implementations should
+    /// decide deliberately whether to fail open or closed when their backing
+    /// store is unavailable, and document the choice.
+    async fn check(&self, key: &str) -> bool;
+}

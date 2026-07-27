@@ -17,7 +17,7 @@ pub async fn list_api_keys() -> Result<Vec<ApiKeyInfo>, ServerFnError> {
         .data()
         .map_err(|_| ServerFnError::new("Not logged in"))?;
     let state = crate::server::state::AppState::global();
-    let user_id = bson::oid::ObjectId::parse_str(&data.id)
+    let user_id = uuid::Uuid::parse_str(&data.id)
         .map_err(|e| ServerFnError::new(format!("invalid user id: {e}")))?;
     let keys = crate::server::api_key::list(&state.db, user_id).await?;
     Ok(keys.into_iter().map(ApiKeyInfo::from).collect())
@@ -33,7 +33,7 @@ pub async fn create_api_key(name: String) -> Result<NewApiKey, ServerFnError> {
         return Err(ServerFnError::new("Name must be 1–64 characters"));
     }
     let state = crate::server::state::AppState::global();
-    let user_id = bson::oid::ObjectId::parse_str(&data.id)
+    let user_id = uuid::Uuid::parse_str(&data.id)
         .map_err(|e| ServerFnError::new(format!("invalid user id: {e}")))?;
     let (token, entity) = crate::server::api_key::create(&state.db, user_id, name).await?;
     Ok(NewApiKey {
@@ -48,9 +48,9 @@ pub async fn revoke_api_key(id: String) -> Result<(), ServerFnError> {
         .data()
         .map_err(|_| ServerFnError::new("Not logged in"))?;
     let state = crate::server::state::AppState::global();
-    let user_id = bson::oid::ObjectId::parse_str(&data.id)
+    let user_id = uuid::Uuid::parse_str(&data.id)
         .map_err(|e| ServerFnError::new(format!("invalid user id: {e}")))?;
-    let key_id = bson::oid::ObjectId::parse_str(&id)
+    let key_id = uuid::Uuid::parse_str(&id)
         .map_err(|e| ServerFnError::new(format!("invalid key id: {e}")))?;
     crate::server::api_key::revoke(&state.db, user_id, key_id).await?;
     Ok(())

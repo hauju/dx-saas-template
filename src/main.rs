@@ -78,9 +78,8 @@ async fn main() {
     use tower_http::compression::CompressionLayer;
     use tower_http::trace::TraceLayer;
     use tower_sessions::cookie::time::Duration;
-    use tower_sessions::{Expiry, SessionManagerLayer};
-    use tower_sessions_redis_store::RedisStore;
-    use tower_sessions_redis_store::fred::prelude::*;
+    use tower_sessions::{ExpiredDeletion, Expiry, SessionManagerLayer};
+    use tower_sessions_sqlx_store::PostgresStore;
 
     use server::auth_store::{AppAuthUserStore, AppEmailSender};
     use server::state::AppState;
@@ -133,14 +132,25 @@ async fn main() {
         .expect("Failed to initialize AppState");
     tracing::info!("AppState initialized");
 
-    // Redis session store
-    let redis_config = Config::from_url(&app_state.config.redis_url).expect("Invalid REDIS_URL");
-    let redis_pool = Pool::new(redis_config, None, None, None, 4).expect("Redis pool error");
-    redis_pool.init().await.expect("Failed to connect to Redis");
-    let redis_store = RedisStore::new(redis_pool);
+    // PostgreSQL session store (reuses the application connection pool)
+    let session_store = PostgresStore::new(app_state.db.pool.clone());
+    session_store
+        .migrate()
+        .await
+        .expect("Failed to migrate session store");
+
+    // Drop elapsed rate-limit windows periodically (see server::rate_limit).
+    server::rate_limit::spawn_sweeper(app_state.db.pool.clone());
+
+    // Prune expired sessions hourly so the table doesn't grow unbounded.
+    let _deletion_task = tokio::task::spawn(
+        session_store
+            .clone()
+            .continuously_delete_expired(tokio::time::Duration::from_secs(60 * 60)),
+    );
 
     // Session layer
-    let session_layer = SessionManagerLayer::new(redis_store)
+    let session_layer = SessionManagerLayer::new(session_store)
         .with_secure(app_state.config.secure_cookies)
         .with_expiry(Expiry::OnInactivity(Duration::days(7)))
         .with_signed(
@@ -166,6 +176,12 @@ async fn main() {
         user_store: Arc::new(AppAuthUserStore::new(app_state.clone())),
         email_sender: Arc::new(AppEmailSender::new(app_state.clone())),
         jwks_cache: app_state.jwks.clone(),
+        // Count auth attempts in PostgreSQL so the quota is enforced once
+        // across every replica, not once per process.
+        rate_limit_store: Some(Arc::new(server::rate_limit::AppAuthRateLimitStore::new(
+            app_state.db.pool.clone(),
+            auth::AUTH_REQUESTS_PER_MINUTE,
+        ))),
     };
 
     let auth_routes = auth::auth_router(auth_config, auth_state);
@@ -182,12 +198,20 @@ async fn main() {
     let router = dioxus::server::router(App)
         .merge(auth_routes)
         // OAuth 2.1 authorization server + MCP connector (see src/server/oauth, mcp).
-        .merge(server::oauth::oauth_router(trust_proxy))
+        .merge(server::oauth::oauth_router(
+            app_state.db.pool.clone(),
+            trust_proxy,
+        ))
         .merge(server::mcp::mcp_router(app_state.clone(), trust_proxy))
         // Polar billing webhook (see src/server/billing).
-        .merge(server::billing::billing_router(trust_proxy))
+        .merge(server::billing::billing_router(
+            app_state.db.pool.clone(),
+            trust_proxy,
+        ))
         // PWA manifest, service worker, and app icons (see src/server/pwa).
         .merge(server::pwa::pwa_router())
+        // GET /health — readiness probe used by the Docker HEALTHCHECK.
+        .merge(server::health::health_router())
         .layer(session_layer)
         .layer(CompressionLayer::new())
         .layer(Extension(app_state))
@@ -214,8 +238,46 @@ async fn main() {
         listener,
         router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
+    .with_graceful_shutdown(shutdown_signal())
     .await
     .expect("Server error");
+
+    tracing::info!("Shutdown complete");
+}
+
+/// Resolves once the process is asked to stop: Ctrl-C when run locally, SIGTERM
+/// from Docker/Coolify on redeploy.
+///
+/// Without this, a redeploy severs in-flight requests mid-response. With it,
+/// the listener stops accepting and existing requests are allowed to finish.
+/// Note that orchestrators follow SIGTERM with SIGKILL after a grace period
+/// (Docker defaults to 10s), which no amount of draining can outlast — keep
+/// long-running work off the request path.
+#[cfg(feature = "server")]
+async fn shutdown_signal() {
+    use tokio::signal;
+
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl-C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => tracing::info!("received Ctrl-C, draining connections"),
+        _ = terminate => tracing::info!("received SIGTERM, draining connections"),
+    }
 }
 
 // ============================================================================

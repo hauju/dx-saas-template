@@ -22,9 +22,9 @@ pub async fn logout(
         .get::<LoggedInData>(LOGGED_IN_USER_SESSION_KEY)
         .await?;
 
-    // Flush the session: removes all data AND deletes it from the store (Redis).
+    // Flush the session: removes all data AND deletes it from the session store.
     // This is stronger than remove() which only deletes one key but leaves
-    // the session ID valid in Redis.
+    // the session ID valid in the store.
     session.flush().await?;
 
     if let Some(login_data) = login_data {

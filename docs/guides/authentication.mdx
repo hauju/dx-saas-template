@@ -6,7 +6,7 @@ sidebarTitle: Authentication
 
 ## Overview
 
-The template uses **[FerrisKey](https://ferriskey.dev)** as the identity provider, integrated via OIDC (authorization code flow with PKCE) and a custom login UI that drives FerrisKey's REST API directly. Authentication is session-based using `tower-sessions` with Redis as the session store.
+The template uses **[FerrisKey](https://ferriskey.dev)** as the identity provider, integrated via OIDC (authorization code flow with PKCE) and a custom login UI that drives FerrisKey's REST API directly. Authentication is session-based using `tower-sessions` with PostgreSQL as the session store.
 
 <Tip>
 FerrisKey is an open-source, Rust-native IdP with WebAuthn/passkey support. The template's custom login page replaces FerrisKey's built-in UI so you control the UX end-to-end.
@@ -29,7 +29,7 @@ The login page supports three credentials, auto-detected from the user's account
     On `Success`, the server exchanges the OIDC `code` for tokens at FerrisKey's `/protocol/openid-connect/token` endpoint using the PKCE verifier. The `id_token` is validated against FerrisKey's JWKS (cached, refreshed on key rotation).
   </Step>
   <Step title="Session cookie is set">
-    The server records the user via `AuthUserStore::lookup_or_create_user` and stores the session in Redis. The signed cookie is HTTP-only and (in production) secure + SameSite=Lax.
+    The server records the user via `AuthUserStore::lookup_or_create_user` and persists the session in PostgreSQL. The signed cookie is HTTP-only and (in production) secure + SameSite=Lax.
   </Step>
   <Step title="Client receives auth state">
     The login page bumps `UserDataRefreshTrigger`, which re-runs `/api/me`. `UserAuthState` transitions to `Authenticated` and the user is navigated to the redirect URL — no full page reload.

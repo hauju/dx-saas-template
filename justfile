@@ -7,7 +7,18 @@ fmt:
 clippy:
     cargo clippy --workspace --all-targets -- -D warnings
 
-check: fmt clippy
+# Mirrors the CI test jobs: the app crate needs the server feature selected
+# explicitly, since its default feature builds the wasm client.
+test:
+    cargo test --workspace --exclude dx-saas-template
+    cargo test -p dx-saas-template --no-default-features --features server
+
+check: fmt clippy test
+
+# Regenerate the committed sqlx query metadata after changing SQL or migrations.
+# Needs a running database (`just init`).
+prepare:
+    cargo sqlx prepare -- --no-default-features --features server
 
 init:
     docker compose up -d
@@ -32,7 +43,7 @@ bootstrap:
     echo "Wrote .env with a fresh SESSION_SECRET."
 
 # Rename the template project. Pass a kebab-case name, e.g. `just rename my-app`.
-# Updates package name, MongoDB db name, tracing filter, Dockerfile binary path, and docs.
+# Updates package name, Postgres db/user name, tracing filter, Dockerfile binary path, and docs.
 rename new-name:
     #!/usr/bin/env bash
     set -euo pipefail

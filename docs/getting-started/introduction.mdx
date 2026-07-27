@@ -18,8 +18,8 @@ Everything compiles to two binaries: a server (Axum + SSR) and a WASM client —
   <Card title="Dioxus 0.7" icon="code">
     Fullstack Rust framework with SSR, hydration, server functions, and a React-like component model.
   </Card>
-  <Card title="MongoDB" icon="database">
-    Document database running as a replica set for transaction support. Single `users` collection with unique indexes.
+  <Card title="PostgreSQL" icon="database">
+    Relational database accessed with `sqlx`. Schema lives in `migrations/`, embedded in the binary and applied on boot.
   </Card>
   <Card title="FerrisKey" icon="shield">
     Open-source, Rust-native OIDC identity provider with WebAuthn/passkey support. The template ships a custom login UI driving FerrisKey's REST API.
@@ -33,7 +33,7 @@ Everything compiles to two binaries: a server (Axum + SSR) and a WASM client —
 
 The project uses **feature-gated compilation** to split code between server and client:
 
-- `#[cfg(feature = "server")]` — Server-only code (MongoDB, Axum, sessions)
+- `#[cfg(feature = "server")]` — Server-only code (PostgreSQL, Axum, sessions)
 - `#[cfg(feature = "web")]` — Client-only code (WASM bindings, browser APIs)
 
 Server functions use the `#[post("/api/...")]` macro and can accept a `session: auth::UserSession` parameter for authentication.

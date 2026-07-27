@@ -1,0 +1,15 @@
+[env]
+# Build against the checked-in query metadata in `.sqlx/` rather than opening a
+# database connection at compile time. This is what lets a fresh clone build
+# with nothing running.
+#
+# Cargo does not override variables already present in the environment, so a
+# one-off live check is `SQLX_OFFLINE=false cargo check`.
+#
+# After changing any SQL or migration, regenerate the metadata:
+#   docker compose up -d
+#   cargo sqlx prepare -- --no-default-features --features server
+#
+# Forgetting to is not silent: the next offline build fails on the query whose
+# cached entry is missing.
+SQLX_OFFLINE = "true"

@@ -18,6 +18,13 @@ use axum::{
 use governor::{Quota, RateLimiter, state::keyed::DefaultKeyedStateStore};
 
 use crate::config::AuthConfig;
+use crate::state::AuthState;
+
+/// Requests allowed per IP per minute across all auth endpoints.
+///
+/// Shared by both backends so the in-process fallback and the
+/// [`crate::AuthRateLimitStore`] path enforce the same number.
+pub const AUTH_REQUESTS_PER_MINUTE: u32 = 20;
 
 /// Keyed rate limiter: one bucket per IP string.
 type KeyedLimiter =
@@ -125,6 +132,7 @@ fn rate_limit_key(
 pub async fn rate_limit_middleware(
     Extension(limiter): Extension<AuthRateLimiter>,
     Extension(config): Extension<AuthConfig>,
+    Extension(state): Extension<AuthState>,
     request: Request,
     next: Next,
 ) -> Response {
@@ -137,16 +145,22 @@ pub async fn rate_limit_middleware(
         config.trust_proxy_headers,
     );
 
-    match limiter.inner.check_key(&key) {
-        Ok(_) => next.run(request).await,
-        Err(_not_until) => {
-            tracing::warn!(rate_limit_key = %key, "Auth rate limit exceeded");
-            (
-                StatusCode::TOO_MANY_REQUESTS,
-                "Too many requests. Please try again later.",
-            )
-                .into_response()
-        }
+    // Prefer the shared store when the host app supplies one, so the quota is
+    // enforced once across every replica rather than once per process.
+    let allowed = match &state.rate_limit_store {
+        Some(store) => store.check(&key).await,
+        None => limiter.inner.check_key(&key).is_ok(),
+    };
+
+    if allowed {
+        next.run(request).await
+    } else {
+        tracing::warn!(rate_limit_key = %key, "Auth rate limit exceeded");
+        (
+            StatusCode::TOO_MANY_REQUESTS,
+            "Too many requests. Please try again later.",
+        )
+            .into_response()
     }
 }
 

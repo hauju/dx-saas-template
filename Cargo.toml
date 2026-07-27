@@ -1,6 +1,6 @@
 [package]
 name = "dx-saas-template"
-description = "Fullstack Dioxus 0.7 SaaS template with FerrisKey auth, MongoDB, Redis sessions, Polar billing, and embedded docs."
+description = "Fullstack Dioxus 0.7 SaaS template with FerrisKey auth, PostgreSQL, Polar billing, and embedded docs."
 readme = "README.md"
 version.workspace = true
 authors.workspace = true
@@ -45,9 +45,6 @@ tracing-subscriber = { version = "0.3.2", default-features = false, features = [
     "registry",
 ] }
 
-# Async
-futures = "0.3.3"
-
 # Date/time
 chrono = { workspace = true }
 
@@ -64,12 +61,20 @@ smtp = { path = "crates/smtp", optional = true }
 polar = { path = "crates/polar", optional = true }
 
 # Server dependencies
-mongodb = { version = "3.1.0", optional = true }
-bson = { version = "2.13", features = ["chrono-0_4"], optional = true }
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio-rustls",
+    "postgres",
+    "uuid",
+    "chrono",
+    "json",
+    "macros",
+    "migrate",
+], optional = true }
+uuid = { version = "1", features = ["v4", "serde"], optional = true }
 axum = { version = "0.8", optional = true }
-tokio = { version = "1", features = ["rt", "time"], optional = true }
+tokio = { version = "1", features = ["rt", "time", "signal", "macros"], optional = true }
 tower-sessions = { version = "0.14", features = ["signed"], optional = true }
-tower-sessions-redis-store = { version = "0.16", optional = true }
+tower-sessions-sqlx-store = { version = "0.15", features = ["postgres"], optional = true }
 tower-http = { version = "0.6", features = ["compression-gzip", "trace"], optional = true }
 governor = { version = "0.10", features = ["std"], optional = true }
 dotenvy = { version = "0.15", optional = true }
@@ -98,12 +103,12 @@ default = ["web"]
 web = ["dioxus/web", "auth/web", "dep:gloo-timers", "dioxus-docs-kit/web"]
 server = [
     "dioxus/server",
-    "dep:mongodb",
-    "dep:bson",
+    "dep:sqlx",
+    "dep:uuid",
     "dep:axum",
     "dep:tokio",
     "dep:tower-sessions",
-    "dep:tower-sessions-redis-store",
+    "dep:tower-sessions-sqlx-store",
     "dep:tower-http",
     "dep:governor",
     "dep:dotenvy",

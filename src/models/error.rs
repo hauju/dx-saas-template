@@ -51,16 +51,16 @@ impl axum::response::IntoResponse for AppError {
 }
 
 #[cfg(feature = "server")]
-impl From<mongodb::error::Error> for AppError {
-    fn from(err: mongodb::error::Error) -> Self {
-        tracing::error!("MongoDB error: {err}");
+impl From<sqlx::Error> for AppError {
+    fn from(err: sqlx::Error) -> Self {
+        tracing::error!("PostgreSQL error: {err}");
         AppError::Internal("Database error".to_string())
     }
 }
 
 #[cfg(feature = "server")]
-impl From<bson::oid::Error> for AppError {
-    fn from(err: bson::oid::Error) -> Self {
+impl From<uuid::Error> for AppError {
+    fn from(err: uuid::Error) -> Self {
         AppError::Validation(format!("Invalid ID: {err}"))
     }
 }

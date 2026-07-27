@@ -50,7 +50,7 @@ jobs:
         run: cargo machete
 
   test:
-    name: unit tests (crates)
+    name: unit tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -61,8 +61,15 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: cargo test
+      - name: cargo test (workspace crates)
         run: cargo test --workspace --exclude dx-saas-template
+
+      # The app crate is excluded above because a bare --workspace build resolves
+      # it with its default (wasm client) feature, which can't run as a test
+      # binary. Its tests cover the OAuth redirect-URI allowlist, proxy-header
+      # trust, and HSTS gating, so run them explicitly against the server feature.
+      - name: cargo test (app crate, server feature)
+        run: cargo test -p dx-saas-template --no-default-features --features server
 
   audit:
     name: cargo audit (vulnerable deps)

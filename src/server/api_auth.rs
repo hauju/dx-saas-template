@@ -14,6 +14,7 @@ use crate::models::AppError;
 use crate::models::user::UserEntity;
 use crate::server::api_key;
 use crate::server::state::AppState;
+use crate::server::user;
 
 /// How a request authenticated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,10 +74,7 @@ async fn resolve_api_key(state: &AppState, token: &str) -> Result<ApiAuth, AppEr
         .await?
         .ok_or(AppError::Unauthorized)?;
 
-    let user = state
-        .db
-        .users
-        .find_one(bson::doc! { "_id": entity.user_id })
+    let user = user::find_by_id(&state.db, entity.user_id)
         .await?
         .ok_or(AppError::Unauthorized)?;
 
@@ -93,10 +91,7 @@ async fn resolve_jwt(state: &AppState, token: &str) -> Result<ApiAuth, AppError>
         .await
         .map_err(|_| AppError::Unauthorized)?;
 
-    let user = state
-        .db
-        .users
-        .find_one(bson::doc! { "sub": &claims.sub })
+    let user = user::find_by_sub(&state.db, &claims.sub)
         .await?
         .ok_or(AppError::Unauthorized)?;
 

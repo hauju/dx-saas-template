@@ -1,7 +1,7 @@
 //! Auth state: trait-object holders for user store and email sender.
 
 use crate::jwt::JwksCache;
-use crate::traits::{AuthEmailSender, AuthUserStore};
+use crate::traits::{AuthEmailSender, AuthRateLimitStore, AuthUserStore};
 use std::sync::Arc;
 
 /// Replaces `Extension<AppState>` in auth handlers.
@@ -16,4 +16,8 @@ pub struct AuthState {
     pub user_store: Arc<dyn AuthUserStore>,
     pub email_sender: Arc<dyn AuthEmailSender>,
     pub jwks_cache: Arc<JwksCache>,
+    /// Optional shared store for rate limiting. `None` falls back to the
+    /// in-process limiter, which under-counts across replicas — see
+    /// [`AuthRateLimitStore`].
+    pub rate_limit_store: Option<Arc<dyn AuthRateLimitStore>>,
 }

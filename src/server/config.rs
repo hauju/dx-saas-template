@@ -4,7 +4,6 @@ use crate::models::AppError;
 #[derive(Debug, Clone)]
 pub struct Config {
     pub db_url: String,
-    pub redis_url: String,
     pub base_url: String,
     pub ferriskey_url: String,
     pub ferriskey_issuer_url: Option<String>,
@@ -24,7 +23,6 @@ impl Config {
 
         Ok(Self {
             db_url: get_env("DATABASE_URL")?,
-            redis_url: get_env("REDIS_URL")?,
             base_url: get_env("BASE_URL")?,
             ferriskey_url: get_env("FERRISKEY_URL")?,
             ferriskey_issuer_url: get_env_optional("FERRISKEY_ISSUER_URL"),

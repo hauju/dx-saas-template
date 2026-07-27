@@ -1,9 +1,12 @@
+use uuid::Uuid;
+
 use crate::models::user::UserEntity;
 use crate::server::state::AppState;
+use crate::server::user;
 use auth::types::{AuthTosAcceptance, AuthUser, NewAuthUser};
 use auth::{AuthEmailSender, AuthError, AuthResult, AuthUserStore};
 
-/// Implements `AuthUserStore` by reading/writing to MongoDB.
+/// Implements `AuthUserStore` by reading/writing to PostgreSQL.
 pub struct AppAuthUserStore {
     state: AppState,
 }
@@ -17,11 +20,7 @@ impl AppAuthUserStore {
 #[async_trait::async_trait]
 impl AuthUserStore for AppAuthUserStore {
     async fn get_user_by_sub(&self, sub: &str) -> AuthResult<Option<AuthUser>> {
-        let user = self
-            .state
-            .db
-            .users
-            .find_one(bson::doc! { "sub": sub })
+        let user = user::find_by_sub(&self.state.db, sub)
             .await
             .map_err(|e| AuthError::ServerStateError(format!("DB error: {e}")))?;
 
@@ -29,11 +28,7 @@ impl AuthUserStore for AppAuthUserStore {
     }
 
     async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<AuthUser>> {
-        let user = self
-            .state
-            .db
-            .users
-            .find_one(bson::doc! { "email": email })
+        let user = user::find_by_email(&self.state.db, email)
             .await
             .map_err(|e| AuthError::ServerStateError(format!("DB error: {e}")))?;
 
@@ -41,41 +36,48 @@ impl AuthUserStore for AppAuthUserStore {
     }
 
     async fn create_user(&self, user: NewAuthUser) -> AuthResult<AuthUser> {
-        let now = chrono::Utc::now();
+        let id = Uuid::new_v4();
+
+        // created_at / updated_at come from the column defaults, so the database
+        // clock stays authoritative (see server::user for the same reasoning).
+        let row = sqlx::query!(
+            r#"INSERT INTO users (id, sub, email) VALUES ($1, $2, $3)
+               RETURNING created_at as "created_at: chrono::DateTime<chrono::Utc>",
+                         updated_at as "updated_at: chrono::DateTime<chrono::Utc>""#,
+            id,
+            user.sub,
+            user.email,
+        )
+        .fetch_one(&self.state.db.pool)
+        .await
+        .map_err(|e| AuthError::ServerStateError(format!("DB insert error: {e}")))?;
+
         let entity = UserEntity {
-            id: bson::oid::ObjectId::new(),
+            id,
             sub: user.sub,
             email: user.email,
             name: None,
             avatar_url: None,
             subscription: None,
-            created_at: now,
-            updated_at: now,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
         };
-
-        self.state
-            .db
-            .users
-            .insert_one(&entity)
-            .await
-            .map_err(|e| AuthError::ServerStateError(format!("DB insert error: {e}")))?;
 
         Ok(user_entity_to_auth_user(entity))
     }
 
     async fn update_user_sub(&self, user_id: &str, new_sub: &str) -> AuthResult<()> {
-        let oid = bson::oid::ObjectId::parse_str(user_id)
+        let id = Uuid::parse_str(user_id)
             .map_err(|e| AuthError::ServerStateError(format!("Invalid user ID: {e}")))?;
 
-        self.state
-            .db
-            .users
-            .update_one(
-                bson::doc! { "_id": oid },
-                bson::doc! { "$set": { "sub": new_sub, "updated_at": bson::DateTime::now() } },
-            )
-            .await
-            .map_err(|e| AuthError::ServerStateError(format!("DB update error: {e}")))?;
+        sqlx::query!(
+            "UPDATE users SET sub = $1, updated_at = NOW() WHERE id = $2",
+            new_sub,
+            id
+        )
+        .execute(&self.state.db.pool)
+        .await
+        .map_err(|e| AuthError::ServerStateError(format!("DB update error: {e}")))?;
 
         Ok(())
     }
@@ -163,7 +165,7 @@ impl AuthEmailSender for AppEmailSender {
 
 fn user_entity_to_auth_user(entity: UserEntity) -> AuthUser {
     AuthUser {
-        id: entity.id.to_hex(),
+        id: entity.id.to_string(),
         sub: entity.sub,
         email: entity.email,
         display_name: entity.name,

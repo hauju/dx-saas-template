@@ -24,7 +24,7 @@ pub mod state;
 pub use state::AuthState;
 
 #[cfg(feature = "server")]
-pub use traits::{AuthEmailSender, AuthUserStore};
+pub use traits::{AuthEmailSender, AuthRateLimitStore, AuthUserStore};
 
 #[cfg(feature = "server")]
 pub mod jwt;
@@ -46,6 +46,8 @@ pub mod csrf;
 
 #[cfg(feature = "server")]
 pub mod rate_limit;
+#[cfg(feature = "server")]
+pub use rate_limit::AUTH_REQUESTS_PER_MINUTE;
 
 #[cfg(feature = "server")]
 mod router;

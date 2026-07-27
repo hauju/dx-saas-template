@@ -5,7 +5,7 @@ use axum::{Extension, Router, routing::post};
 use crate::config::AuthConfig;
 use crate::csrf::csrf_origin_check;
 use crate::handlers;
-use crate::rate_limit::{AuthRateLimiter, rate_limit_middleware};
+use crate::rate_limit::{self, AuthRateLimiter, rate_limit_middleware};
 use crate::session;
 use crate::state::AuthState;
 
@@ -27,7 +27,7 @@ use crate::state::AuthState;
 ///
 /// `AuthConfig` and `AuthState` are added as `Extension`s for handler access.
 pub fn auth_router(auth_config: AuthConfig, auth_state: AuthState) -> Router {
-    let rate_limiter = AuthRateLimiter::new(20);
+    let rate_limiter = AuthRateLimiter::new(rate_limit::AUTH_REQUESTS_PER_MINUTE);
 
     let router = Router::new()
         // Logout (POST to prevent forced-logout via cross-site image/link tags)

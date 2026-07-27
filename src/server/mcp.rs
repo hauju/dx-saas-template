@@ -91,9 +91,7 @@ impl McpTools {
         };
         let text = format!(
             "Authenticated as {} (id {}) via {}.",
-            auth.user.email,
-            auth.user.id.to_hex(),
-            via
+            auth.user.email, auth.user.id, via
         );
         Ok(CallToolResult::success(vec![Content::text(text)]))
     }
@@ -218,7 +216,8 @@ pub async fn mcp_auth_challenge(
 /// Build the `/mcp` router: rmcp Streamable-HTTP service + auth challenge + rate
 /// limit. A fresh [`McpTools`] is created per session via the service factory.
 pub fn mcp_router(state: AppState, trust_proxy_headers: bool) -> Router {
-    let limiter = IpRateLimiter::per_minute(120, trust_proxy_headers);
+    let limiter =
+        IpRateLimiter::shared_per_minute(state.db.pool.clone(), "mcp", 120, trust_proxy_headers);
     let session_manager = Arc::new(LocalSessionManager::default());
     let server_config = StreamableHttpServerConfig::default();
 

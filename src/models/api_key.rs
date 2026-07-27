@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "server")]
-use bson::oid::ObjectId;
+use uuid::Uuid;
 
 /// Non-secret metadata about an API key, safe to send to the client.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -30,15 +30,14 @@ pub struct NewApiKey {
     pub info: ApiKeyInfo,
 }
 
-/// API key as stored in MongoDB (`api_keys` collection).
+/// API key as stored in PostgreSQL (`api_keys` table).
 #[cfg(feature = "server")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiKeyEntity {
-    #[serde(rename = "_id")]
-    pub id: ObjectId,
+    pub id: Uuid,
 
-    /// Owning user (`UserEntity._id`).
-    pub user_id: ObjectId,
+    /// Owning user (`users.id`).
+    pub user_id: Uuid,
 
     /// Human-friendly label.
     pub name: String,
@@ -58,7 +57,7 @@ pub struct ApiKeyEntity {
 impl From<ApiKeyEntity> for ApiKeyInfo {
     fn from(e: ApiKeyEntity) -> Self {
         Self {
-            id: e.id.to_hex(),
+            id: e.id.to_string(),
             name: e.name,
             prefix: e.prefix,
             created_at: e.created_at.to_rfc3339(),

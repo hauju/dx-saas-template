@@ -15,12 +15,9 @@ pub async fn subscription_status() -> Result<Option<SubscriptionInfo>, ServerFnE
         .data()
         .map_err(|_| ServerFnError::new("Not logged in"))?;
     let state = crate::server::state::AppState::global();
-    let user_id = bson::oid::ObjectId::parse_str(&data.id)
+    let user_id = uuid::Uuid::parse_str(&data.id)
         .map_err(|e| ServerFnError::new(format!("invalid user id: {e}")))?;
-    let user = state
-        .db
-        .users
-        .find_one(bson::doc! { "_id": user_id })
+    let user = crate::server::user::find_by_id(&state.db, user_id)
         .await
         .map_err(|e| ServerFnError::new(format!("db error: {e}")))?;
     Ok(user.and_then(|u| u.subscription))
@@ -34,12 +31,9 @@ pub async fn premium_ping() -> Result<String, ServerFnError> {
         .data()
         .map_err(|_| ServerFnError::new("Not logged in"))?;
     let state = crate::server::state::AppState::global();
-    let user_id = bson::oid::ObjectId::parse_str(&data.id)
+    let user_id = uuid::Uuid::parse_str(&data.id)
         .map_err(|e| ServerFnError::new(format!("invalid user id: {e}")))?;
-    let user = state
-        .db
-        .users
-        .find_one(bson::doc! { "_id": user_id })
+    let user = crate::server::user::find_by_id(&state.db, user_id)
         .await
         .map_err(|e| ServerFnError::new(format!("db error: {e}")))?
         .ok_or_else(|| ServerFnError::new("user not found"))?;

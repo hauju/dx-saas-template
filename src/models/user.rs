@@ -1,14 +1,13 @@
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "server")]
-use bson::oid::ObjectId;
+use uuid::Uuid;
 
-/// User entity stored in MongoDB.
+/// User entity stored in PostgreSQL.
 #[cfg(feature = "server")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserEntity {
-    #[serde(rename = "_id")]
-    pub id: ObjectId,
+    pub id: Uuid,
 
     /// OIDC subject identifier (from FerrisKey)
     pub sub: String,

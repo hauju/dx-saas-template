@@ -18,7 +18,7 @@ use crate::server::state::AppState;
 
 const PENDING_KEY: &str = "oauth_pending";
 const CSRF_KEY: &str = "oauth_csrf";
-const CODE_TTL_SECONDS: i64 = 60;
+const CODE_TTL_SECONDS: f64 = 60.0;
 
 /// The validated authorize request, stashed in the session between the initial
 /// request and the consent decision (so the consent form never carries
@@ -151,7 +151,7 @@ pub async fn decision(
         );
     }
 
-    let user_id = match bson::oid::ObjectId::parse_str(&user.id) {
+    let user_id = match uuid::Uuid::parse_str(&user.id) {
         Ok(id) => id,
         Err(_) => return error_page("Invalid session."),
     };
@@ -159,17 +159,21 @@ pub async fn decision(
         Ok(c) => c,
         Err(_) => return error_page("Internal error."),
     };
-    let entity = store::OAuthCodeEntity {
-        id: bson::oid::ObjectId::new(),
-        code: code.clone(),
-        client_id: pending.client_id,
-        redirect_uri: pending.redirect_uri.clone(),
-        code_challenge: pending.code_challenge,
+    // `expires_at` is set from the database clock (see store::insert_code).
+    if store::insert_code(
+        &state.db,
+        uuid::Uuid::new_v4(),
+        &code,
+        &pending.client_id,
+        &pending.redirect_uri,
+        &pending.code_challenge,
         user_id,
-        scope: pending.scope,
-        expires_at: chrono::Utc::now() + chrono::Duration::seconds(CODE_TTL_SECONDS),
-    };
-    if store::insert_code(&state.db, &entity).await.is_err() {
+        &pending.scope,
+        CODE_TTL_SECONDS,
+    )
+    .await
+    .is_err()
+    {
         return error_page("Could not issue authorization code.");
     }
 

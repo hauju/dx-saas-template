@@ -57,21 +57,24 @@ pub async fn register(state: AppState, Json(req): Json<RegisterRequest>) -> Resp
         }
     };
 
-    let entity = store::OAuthClientEntity {
-        id: bson::oid::ObjectId::new(),
-        client_id: client_id.clone(),
-        redirect_uris: req.redirect_uris.clone(),
-        client_name: req.client_name.clone(),
-        created_at: chrono::Utc::now(),
+    let entity = match store::insert_client(
+        &state.db,
+        uuid::Uuid::new_v4(),
+        &client_id,
+        &req.redirect_uris,
+        req.client_name.as_deref(),
+    )
+    .await
+    {
+        Ok(entity) => entity,
+        Err(_) => {
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "server_error",
+                "could not persist client",
+            );
+        }
     };
-
-    if store::insert_client(&state.db, &entity).await.is_err() {
-        return error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "server_error",
-            "could not persist client",
-        );
-    }
 
     (
         StatusCode::CREATED,

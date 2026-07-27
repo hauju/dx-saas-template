@@ -11,7 +11,7 @@ Make sure you have the following installed:
 - **Rust** (latest stable) — [rustup.rs](https://rustup.rs)
 - **Dioxus CLI** — `curl -sSL http://dioxus.dev/install.sh | sh`
 - **Bun** — [bun.sh](https://bun.sh) (for Tailwind CSS)
-- **Docker** — for MongoDB, Redis, and Mailpit
+- **Docker** — for PostgreSQL and Mailpit
 
 ## Quick Start
 
@@ -30,8 +30,7 @@ Make sure you have the following installed:
     This copies `.env.example` to `.env` and generates a fresh `SESSION_SECRET` for you.
 
     Then edit `.env` to set the rest:
-    - `DATABASE_URL` — MongoDB connection string (default: `mongodb://localhost:27017`)
-    - `REDIS_URL` — Redis connection string (default: `redis://localhost:6379`)
+    - `DATABASE_URL` — PostgreSQL connection string (default: `postgres://dx_saas:dx_saas@localhost:5432/dx_saas`)
     - `FERRISKEY_URL` / `FERRISKEY_REALM` / `FERRISKEY_CLIENT_ID` / `FERRISKEY_CLIENT_SECRET` — Your FerrisKey instance, realm, and OIDC client
     - `BASE_URL` — Your app's base URL (default: `http://localhost:8080`)
   </Step>
@@ -41,9 +40,10 @@ Make sure you have the following installed:
     ```
 
     This starts:
-    - **MongoDB** as a replica set on port `27017`
-    - **Redis (Valkey)** on port `6379`
+    - **PostgreSQL 18** on port `5432`
     - **Mailpit** with SMTP on `1025` and web UI on `8025`
+
+    Schema migrations in `migrations/` are embedded in the binary and applied automatically on first boot.
   </Step>
   <Step title="Install frontend dependencies">
     ```bash
@@ -78,8 +78,7 @@ The `dx serve` command automatically compiles Tailwind CSS. You only need to run
 
 <AccordionGroup>
   <Accordion title="Core Settings">
-    - `DATABASE_URL` — MongoDB connection string
-    - `REDIS_URL` — Redis/Valkey connection string
+    - `DATABASE_URL` — PostgreSQL connection string
     - `BASE_URL` — Public URL of your application
     - `SESSION_SECRET` — Hex-encoded session signing key (64+ bytes)
     - `SECURE_COOKIES` — Set to `true` in production (HTTPS)
@@ -111,6 +110,23 @@ The `dx serve` command automatically compiles Tailwind CSS. You only need to run
   </Accordion>
 </AccordionGroup>
 
+## Changing the database schema
+
+Queries use `sqlx`'s compile-time-checked macros, so column names and types are
+verified against the schema when you build. The metadata lives in `.sqlx/` and is
+committed, which is what lets a fresh clone build with no database running.
+
+<Warning>
+After editing any SQL or adding a migration, regenerate the metadata:
+
+```bash
+docker compose up -d
+cargo sqlx prepare -- --no-default-features --features server
+```
+
+If you forget, the next build fails on the query whose cached entry is missing.
+</Warning>
+
 ## Renaming the project
 
 After cloning, give the project its own name:
@@ -119,4 +135,4 @@ After cloning, give the project its own name:
 just rename my-new-project
 ```
 
-This rewrites the package name, MongoDB database name, tracing filter, Dockerfile binary path, and docs in one shot. Run `cargo build` afterwards to regenerate `Cargo.lock`.
+This rewrites the package name, Postgres database/user name, tracing filter, Dockerfile binary path, and docs in one shot. Run `cargo build` afterwards to regenerate `Cargo.lock`.
