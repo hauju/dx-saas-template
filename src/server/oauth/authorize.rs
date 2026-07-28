@@ -162,14 +162,16 @@ pub async fn decision(
     // `expires_at` is set from the database clock (see store::insert_code).
     if store::insert_code(
         &state.db,
-        uuid::Uuid::new_v4(),
-        &code,
-        &pending.client_id,
-        &pending.redirect_uri,
-        &pending.code_challenge,
-        user_id,
-        &pending.scope,
-        CODE_TTL_SECONDS,
+        store::NewAuthorizationCode {
+            id: uuid::Uuid::new_v4(),
+            code: &code,
+            client_id: &pending.client_id,
+            redirect_uri: &pending.redirect_uri,
+            code_challenge: &pending.code_challenge,
+            user_id,
+            scope: &pending.scope,
+            ttl_seconds: CODE_TTL_SECONDS,
+        },
     )
     .await
     .is_err()

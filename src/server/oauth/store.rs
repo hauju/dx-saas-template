@@ -94,19 +94,26 @@ pub async fn find_client(
     Ok(row)
 }
 
-/// Mint an authorization code valid for `ttl_seconds`.
-#[allow(clippy::too_many_arguments)]
-pub async fn insert_code(
-    db: &Database,
-    id: Uuid,
-    code: &str,
-    client_id: &str,
-    redirect_uri: &str,
-    code_challenge: &str,
-    user_id: Uuid,
-    scope: &str,
-    ttl_seconds: f64,
-) -> Result<(), AppError> {
+/// A code about to be issued.
+///
+/// A struct rather than a positional argument list: four of these fields are
+/// adjacent `&str`s, and swapping `redirect_uri` with `code_challenge` at a
+/// call site would compile, pass tests that don't exercise the full exchange,
+/// and quietly break PKCE. Named fields make that transposition impossible.
+pub struct NewAuthorizationCode<'a> {
+    pub id: Uuid,
+    pub code: &'a str,
+    pub client_id: &'a str,
+    pub redirect_uri: &'a str,
+    pub code_challenge: &'a str,
+    pub user_id: Uuid,
+    pub scope: &'a str,
+    /// How long the code stays valid; applied against the database clock.
+    pub ttl_seconds: f64,
+}
+
+/// Mint an authorization code.
+pub async fn insert_code(db: &Database, new: NewAuthorizationCode<'_>) -> Result<(), AppError> {
     // Codes are deleted on consumption, but an authorization the user abandons
     // leaves its row behind. Sweep expired rows here (cheap, and this endpoint
     // is rarely hit) so the table stays bounded without a background task.
@@ -118,14 +125,14 @@ pub async fn insert_code(
         "INSERT INTO oauth_codes \
          (id, code, client_id, redirect_uri, code_challenge, user_id, scope, expires_at) \
          VALUES ($1, $2, $3, $4, $5, $6, $7, NOW() + make_interval(secs => $8::float8))",
-        id,
-        code,
-        client_id,
-        redirect_uri,
-        code_challenge,
-        user_id,
-        scope,
-        ttl_seconds,
+        new.id,
+        new.code,
+        new.client_id,
+        new.redirect_uri,
+        new.code_challenge,
+        new.user_id,
+        new.scope,
+        new.ttl_seconds,
     )
     .execute(&db.pool)
     .await?;
@@ -204,14 +211,16 @@ mod tests {
         let user = seed_user(&db, "code").await;
         insert_code(
             &db,
-            Uuid::new_v4(),
-            "code-1",
-            &client_id("b"),
-            "http://cb",
-            "challenge",
-            user,
-            "mcp",
-            60.0,
+            NewAuthorizationCode {
+                id: Uuid::new_v4(),
+                code: "code-1",
+                client_id: &client_id("b"),
+                redirect_uri: "http://cb",
+                code_challenge: "challenge",
+                user_id: user,
+                scope: "mcp",
+                ttl_seconds: 60.0,
+            },
         )
         .await
         .unwrap();
@@ -231,14 +240,16 @@ mod tests {
         let user = seed_user(&db, "race").await;
         insert_code(
             &db,
-            Uuid::new_v4(),
-            "code-race",
-            &client_id("c"),
-            "http://cb",
-            "challenge",
-            user,
-            "mcp",
-            60.0,
+            NewAuthorizationCode {
+                id: Uuid::new_v4(),
+                code: "code-race",
+                client_id: &client_id("c"),
+                redirect_uri: "http://cb",
+                code_challenge: "challenge",
+                user_id: user,
+                scope: "mcp",
+                ttl_seconds: 60.0,
+            },
         )
         .await
         .unwrap();
@@ -261,27 +272,31 @@ mod tests {
         // authorization was started and then abandoned.
         insert_code(
             &db,
-            Uuid::new_v4(),
-            "stale",
-            &client_id("d"),
-            "http://cb",
-            "ch",
-            user,
-            "mcp",
-            -1.0,
+            NewAuthorizationCode {
+                id: Uuid::new_v4(),
+                code: "stale",
+                client_id: &client_id("d"),
+                redirect_uri: "http://cb",
+                code_challenge: "ch",
+                user_id: user,
+                scope: "mcp",
+                ttl_seconds: -1.0,
+            },
         )
         .await
         .unwrap();
         insert_code(
             &db,
-            Uuid::new_v4(),
-            "fresh",
-            &client_id("d"),
-            "http://cb",
-            "ch",
-            user,
-            "mcp",
-            60.0,
+            NewAuthorizationCode {
+                id: Uuid::new_v4(),
+                code: "fresh",
+                client_id: &client_id("d"),
+                redirect_uri: "http://cb",
+                code_challenge: "ch",
+                user_id: user,
+                scope: "mcp",
+                ttl_seconds: 60.0,
+            },
         )
         .await
         .unwrap();
@@ -304,14 +319,16 @@ mod tests {
         let user = seed_user(&db, "cascade").await;
         insert_code(
             &db,
-            Uuid::new_v4(),
-            "c",
-            &client_id("e"),
-            "http://cb",
-            "ch",
-            user,
-            "mcp",
-            60.0,
+            NewAuthorizationCode {
+                id: Uuid::new_v4(),
+                code: "c",
+                client_id: &client_id("e"),
+                redirect_uri: "http://cb",
+                code_challenge: "ch",
+                user_id: user,
+                scope: "mcp",
+                ttl_seconds: 60.0,
+            },
         )
         .await
         .unwrap();

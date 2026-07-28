@@ -27,7 +27,9 @@ EXPOSE 8080
 # /health round-trips a query to PostgreSQL, so this reports unhealthy when the
 # process is up but the database is unreachable. start-period covers boot +
 # migrations on a cold database.
+# Follows PORT rather than hardcoding 8080: overriding PORT and leaving the
+# probe pointed at 8080 would mark a perfectly healthy container unhealthy.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl -fsS http://127.0.0.1:8080/health || exit 1
+    CMD curl -fsS "http://127.0.0.1:${PORT:-8080}/health" || exit 1
 
 ENTRYPOINT ["/usr/local/app/server"]

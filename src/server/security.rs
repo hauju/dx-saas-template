@@ -135,9 +135,14 @@ impl IpRateLimiter {
         }
     }
 
-    async fn check(&self, key: &str) -> bool {
+    /// Takes `&String` rather than `&str` deliberately: governor's keyed limiter
+    /// is keyed by `String`, so a `&str` here would allocate one on every
+    /// request — including static assets, which is the hottest path in the app.
+    /// The caller already owns the key.
+    #[allow(clippy::ptr_arg)]
+    async fn check(&self, key: &String) -> bool {
         match &self.backend {
-            Backend::Local(limiter) => limiter.check_key(&key.to_string()).is_ok(),
+            Backend::Local(limiter) => limiter.check_key(key).is_ok(),
             // Fail open on database errors: every route behind a shared limiter
             // needs the same database to serve a real response, so rejecting
             // here would convert a database blip into a hard outage while
