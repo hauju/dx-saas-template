@@ -4,6 +4,9 @@
 
 use dioxus::prelude::*;
 
+#[cfg(feature = "server")]
+use crate::models::AppError;
+
 use crate::components::toast::{ToastLevel, show_toast};
 use crate::models::api_key::{ApiKeyInfo, NewApiKey};
 
@@ -15,10 +18,10 @@ use crate::models::api_key::{ApiKeyInfo, NewApiKey};
 pub async fn list_api_keys() -> Result<Vec<ApiKeyInfo>, ServerFnError> {
     let data = session
         .data()
-        .map_err(|_| ServerFnError::new("Not logged in"))?;
+        .map_err(|_| ServerFnError::from(AppError::Unauthorized))?;
     let state = crate::server::state::AppState::global();
     let user_id = uuid::Uuid::parse_str(&data.id)
-        .map_err(|e| ServerFnError::new(format!("invalid user id: {e}")))?;
+        .map_err(|e| ServerFnError::from(AppError::Validation(format!("invalid user id: {e}"))))?;
     let keys = crate::server::api_key::list(&state.db, user_id).await?;
     Ok(keys.into_iter().map(ApiKeyInfo::from).collect())
 }
@@ -27,14 +30,16 @@ pub async fn list_api_keys() -> Result<Vec<ApiKeyInfo>, ServerFnError> {
 pub async fn create_api_key(name: String) -> Result<NewApiKey, ServerFnError> {
     let data = session
         .data()
-        .map_err(|_| ServerFnError::new("Not logged in"))?;
+        .map_err(|_| ServerFnError::from(AppError::Unauthorized))?;
     let name = name.trim();
     if name.is_empty() || name.chars().count() > 64 {
-        return Err(ServerFnError::new("Name must be 1–64 characters"));
+        return Err(ServerFnError::from(AppError::Validation(
+            "Name must be 1–64 characters".to_string(),
+        )));
     }
     let state = crate::server::state::AppState::global();
     let user_id = uuid::Uuid::parse_str(&data.id)
-        .map_err(|e| ServerFnError::new(format!("invalid user id: {e}")))?;
+        .map_err(|e| ServerFnError::from(AppError::Validation(format!("invalid user id: {e}"))))?;
     let (token, entity) = crate::server::api_key::create(&state.db, user_id, name).await?;
     Ok(NewApiKey {
         token,
@@ -46,12 +51,12 @@ pub async fn create_api_key(name: String) -> Result<NewApiKey, ServerFnError> {
 pub async fn revoke_api_key(id: String) -> Result<(), ServerFnError> {
     let data = session
         .data()
-        .map_err(|_| ServerFnError::new("Not logged in"))?;
+        .map_err(|_| ServerFnError::from(AppError::Unauthorized))?;
     let state = crate::server::state::AppState::global();
     let user_id = uuid::Uuid::parse_str(&data.id)
-        .map_err(|e| ServerFnError::new(format!("invalid user id: {e}")))?;
+        .map_err(|e| ServerFnError::from(AppError::Validation(format!("invalid user id: {e}"))))?;
     let key_id = uuid::Uuid::parse_str(&id)
-        .map_err(|e| ServerFnError::new(format!("invalid key id: {e}")))?;
+        .map_err(|e| ServerFnError::from(AppError::Validation(format!("invalid key id: {e}"))))?;
     crate::server::api_key::revoke(&state.db, user_id, key_id).await?;
     Ok(())
 }

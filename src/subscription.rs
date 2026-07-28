@@ -3,6 +3,9 @@
 
 use dioxus::prelude::*;
 
+#[cfg(feature = "server")]
+use crate::models::AppError;
+
 use crate::models::subscription::SubscriptionInfo;
 
 // ============================================================================
@@ -13,13 +16,13 @@ use crate::models::subscription::SubscriptionInfo;
 pub async fn subscription_status() -> Result<Option<SubscriptionInfo>, ServerFnError> {
     let data = session
         .data()
-        .map_err(|_| ServerFnError::new("Not logged in"))?;
+        .map_err(|_| ServerFnError::from(AppError::Unauthorized))?;
     let state = crate::server::state::AppState::global();
     let user_id = uuid::Uuid::parse_str(&data.id)
-        .map_err(|e| ServerFnError::new(format!("invalid user id: {e}")))?;
+        .map_err(|e| ServerFnError::from(AppError::Validation(format!("invalid user id: {e}"))))?;
     let user = crate::server::user::find_by_id(&state.db, user_id)
         .await
-        .map_err(|e| ServerFnError::new(format!("db error: {e}")))?;
+        .map_err(|e| ServerFnError::from(AppError::Internal(format!("db error: {e}"))))?;
     Ok(user.and_then(|u| u.subscription))
 }
 
@@ -29,14 +32,14 @@ pub async fn subscription_status() -> Result<Option<SubscriptionInfo>, ServerFnE
 pub async fn premium_ping() -> Result<String, ServerFnError> {
     let data = session
         .data()
-        .map_err(|_| ServerFnError::new("Not logged in"))?;
+        .map_err(|_| ServerFnError::from(AppError::Unauthorized))?;
     let state = crate::server::state::AppState::global();
     let user_id = uuid::Uuid::parse_str(&data.id)
-        .map_err(|e| ServerFnError::new(format!("invalid user id: {e}")))?;
+        .map_err(|e| ServerFnError::from(AppError::Validation(format!("invalid user id: {e}"))))?;
     let user = crate::server::user::find_by_id(&state.db, user_id)
         .await
-        .map_err(|e| ServerFnError::new(format!("db error: {e}")))?
-        .ok_or_else(|| ServerFnError::new("user not found"))?;
+        .map_err(|e| ServerFnError::from(AppError::Internal(format!("db error: {e}"))))?
+        .ok_or_else(|| ServerFnError::from(AppError::NotFound))?;
 
     crate::server::billing::require_active(&user.subscription)?;
     Ok("pong — premium access confirmed".to_string())

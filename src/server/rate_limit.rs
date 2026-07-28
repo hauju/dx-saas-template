@@ -195,12 +195,24 @@ mod tests {
     async fn separate_windows_get_separate_counters(pool: PgPool) {
         // A 1-second window: sleeping past it must reset the count. This is the
         // fixed-window behaviour the shared limiter documents.
-        let limiter = SharedRateLimiter::per_window(pool, "test", 1, 1.0);
+        let limiter = SharedRateLimiter::per_window(pool.clone(), "test", 1, 1.0);
+
+        // Align to just after a boundary first. Without this the two in-window
+        // calls below can land either side of one, both be allowed, and the test
+        // fails for a reason that has nothing to do with the limiter.
+        let until_next: f64 = sqlx::query_scalar(
+            "SELECT 1.0 - (extract(epoch from now())::float8 \
+                           - floor(extract(epoch from now())::float8))",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        tokio::time::sleep(Duration::from_secs_f64(until_next + 0.05)).await;
 
         assert!(limiter.check("ip").await.unwrap());
         assert!(
             !limiter.check("ip").await.unwrap(),
-            "second request in the window is denied"
+            "second request in the same window is denied"
         );
 
         tokio::time::sleep(Duration::from_millis(1100)).await;

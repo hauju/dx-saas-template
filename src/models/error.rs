@@ -25,9 +25,37 @@ pub enum AppError {
     SubscriptionRequired(String),
 }
 
+impl AppError {
+    /// HTTP status this error should be reported as.
+    ///
+    /// Defined once, and deliberately not behind `#[cfg(feature = "server")]`:
+    /// both the Axum response path and the server-function path need it, and
+    /// having two copies is how they drift.
+    pub fn status_code(&self) -> u16 {
+        match self {
+            AppError::NotFound => 404,
+            AppError::Validation(_) => 400,
+            AppError::Unauthorized => 401,
+            AppError::Conflict(_) => 409,
+            AppError::Internal(_) => 500,
+            AppError::LimitExceeded(_) => 429,
+            AppError::SubscriptionRequired(_) => 402,
+        }
+    }
+}
+
 impl From<AppError> for ServerFnError {
     fn from(err: AppError) -> Self {
-        ServerFnError::new(err.to_string())
+        // Built directly rather than via `ServerFnError::new`, which hardcodes
+        // 500. Without this every business-rule refusal — payment required, not
+        // found, unauthorized — reaches the client as a server fault: the client
+        // cannot tell "you need to upgrade" from "we broke", and the error is
+        // logged at ERROR level as if something were wrong with the server.
+        ServerFnError::ServerError {
+            message: err.to_string(),
+            code: err.status_code(),
+            details: None,
+        }
     }
 }
 
@@ -36,15 +64,8 @@ impl axum::response::IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
         use axum::http::StatusCode;
 
-        let status = match &self {
-            AppError::NotFound => StatusCode::NOT_FOUND,
-            AppError::Validation(_) => StatusCode::BAD_REQUEST,
-            AppError::Unauthorized => StatusCode::UNAUTHORIZED,
-            AppError::Conflict(_) => StatusCode::CONFLICT,
-            AppError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            AppError::LimitExceeded(_) => StatusCode::TOO_MANY_REQUESTS,
-            AppError::SubscriptionRequired(_) => StatusCode::PAYMENT_REQUIRED,
-        };
+        let status =
+            StatusCode::from_u16(self.status_code()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
 
         let body = serde_json::json!({
             "error": self.to_string(),
@@ -78,5 +99,34 @@ impl From<sqlx::Error> for AppError {
 impl From<uuid::Error> for AppError {
     fn from(err: uuid::Error) -> Self {
         AppError::Validation(format!("Invalid ID: {err}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn business_rule_refusals_keep_their_status_through_server_functions() {
+        let cases = [
+            (AppError::SubscriptionRequired("upgrade".into()), 402),
+            (AppError::NotFound, 404),
+            (AppError::Unauthorized, 401),
+            (AppError::Conflict("exists".into()), 409),
+            (AppError::Validation("bad".into()), 400),
+            (AppError::LimitExceeded("slow down".into()), 429),
+            (AppError::Internal("boom".into()), 500),
+        ];
+
+        for (err, expected) in cases {
+            let text = err.to_string();
+            match ServerFnError::from(err) {
+                ServerFnError::ServerError { code, message, .. } => {
+                    assert_eq!(code, expected, "wrong status for {message}");
+                    assert_eq!(message, text);
+                }
+                other => panic!("expected a ServerError, got {other:?}"),
+            }
+        }
     }
 }

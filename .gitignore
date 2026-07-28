@@ -31,3 +31,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Browser automation artifacts
+.playwright-mcp/
