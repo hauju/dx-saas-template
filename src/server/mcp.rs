@@ -20,19 +20,14 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use rmcp::ErrorData as McpError;
 use rmcp::handler::server::ServerHandler;
-use rmcp::handler::server::tool::{Extension, ToolCallContext, ToolRouter};
+use rmcp::handler::server::tool::{Extension, ToolRouter};
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{
-    CallToolRequestParams, CallToolResult, Content, Implementation, InitializeRequestParams,
-    InitializeResult, ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerInfo,
-    Tool,
-};
-use rmcp::service::{RequestContext, RoleServer};
+use rmcp::model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerInfo};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::tower::{
     StreamableHttpServerConfig, StreamableHttpService,
 };
-use rmcp::{tool, tool_router};
+use rmcp::{tool, tool_handler, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -93,7 +88,7 @@ impl McpTools {
             "Authenticated as {} (id {}) via {}.",
             auth.user.email, auth.user.id, via
         );
-        Ok(CallToolResult::success(vec![Content::text(text)]))
+        Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
     }
 
     /// Echo back the provided message.
@@ -105,74 +100,36 @@ impl McpTools {
     ) -> Result<CallToolResult, McpError> {
         // Require auth so the whole endpoint is uniformly protected.
         self.authenticate(&parts).await?;
-        Ok(CallToolResult::success(vec![Content::text(
+        Ok(CallToolResult::success(vec![ContentBlock::text(
             params.0.message,
         )]))
     }
 }
 
+/// `#[tool_handler]` generates `call_tool`, `list_tools`, and `get_tool`. The
+/// explicit `router = self.tool_router` matters: the attribute otherwise defaults
+/// to `Self::tool_router()`, which rebuilds the router — re-deriving every tool's
+/// JSON schema — on every `tools/list` and `tools/call`. Pointing it at the field
+/// reuses the one built in [`McpTools::new`].
+///
+/// The remaining trait methods — notably `initialize` — keep their defaults, which
+/// negotiate the protocol version against what the client asked for and record the
+/// peer info. That negotiation matters under the `2026-07-28` spec: per SEP-2567
+/// the version decides whether a request is served statelessly, so pinning it to
+/// the server's own default (as a hand-written `initialize` would) breaks older
+/// clients.
+#[tool_handler(router = self.tool_router)]
 impl ServerHandler for McpTools {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            protocol_version: Default::default(),
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            server_info: Implementation {
-                name: "dx-saas-template".to_string(),
-                version: env!("CARGO_PKG_VERSION").to_string(),
-                title: Some("dx-saas-template MCP".to_string()),
-                icons: None,
-                website_url: None,
-            },
-            instructions: Some(
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(
+                Implementation::new("dx-saas-template", env!("CARGO_PKG_VERSION"))
+                    .with_title("dx-saas-template MCP"),
+            )
+            .with_instructions(
                 "Authenticate with an API key via 'Authorization: Bearer <token>' or \
-                 'X-API-Key: <token>'. Tools: whoami, echo."
-                    .to_string(),
-            ),
-        }
-    }
-
-    // The trait requires `-> impl Future + Send`; a plain `async fn` can't carry
-    // the `Send` bound here, so the explicit future is intentional.
-    #[allow(clippy::manual_async_fn)]
-    fn initialize(
-        &self,
-        _request: InitializeRequestParams,
-        _context: RequestContext<RoleServer>,
-    ) -> impl std::future::Future<Output = Result<InitializeResult, McpError>> + Send + '_ {
-        async {
-            let info = self.get_info();
-            Ok(InitializeResult {
-                protocol_version: info.protocol_version,
-                capabilities: info.capabilities,
-                server_info: info.server_info,
-                instructions: info.instructions,
-            })
-        }
-    }
-
-    #[allow(clippy::manual_async_fn)]
-    fn list_tools(
-        &self,
-        _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
-    ) -> impl std::future::Future<Output = Result<ListToolsResult, McpError>> + Send + '_ {
-        async {
-            let tools: Vec<Tool> = self.tool_router.list_all();
-            Ok(ListToolsResult {
-                tools,
-                next_cursor: None,
-                meta: None,
-            })
-        }
-    }
-
-    fn call_tool(
-        &self,
-        request: CallToolRequestParams,
-        context: RequestContext<RoleServer>,
-    ) -> impl std::future::Future<Output = Result<CallToolResult, McpError>> + Send + '_ {
-        let tool_context = ToolCallContext::new(self, request, context);
-        self.tool_router.call(tool_context)
+                 'X-API-Key: <token>'. Tools: whoami, echo.",
+            )
     }
 }
 
@@ -213,13 +170,45 @@ pub async fn mcp_auth_challenge(
         .into_response()
 }
 
+/// Hosts accepted in the `Host` header of `/mcp` requests.
+///
+/// rmcp validates `Host` to block DNS rebinding, and its default allowlist is
+/// loopback-only — which would reject every request to a deployed instance. The
+/// deployment's own hostname comes from `BASE_URL`; loopback stays on the list so
+/// local development and container health checks keep working.
+///
+/// Entries are bare hostnames, without a port, because rmcp treats a portless
+/// entry as "any port": the public URL and the port the process actually listens
+/// on differ behind a reverse proxy.
+fn allowed_hosts(base_url: &str) -> Vec<String> {
+    let mut hosts = vec![
+        "localhost".to_string(),
+        "127.0.0.1".to_string(),
+        "::1".to_string(),
+    ];
+    if let Some(host) = url::Url::parse(base_url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_ascii_lowercase))
+        && !hosts.contains(&host)
+    {
+        hosts.push(host);
+    }
+    hosts
+}
+
 /// Build the `/mcp` router: rmcp Streamable-HTTP service + auth challenge + rate
-/// limit. A fresh [`McpTools`] is created per session via the service factory.
+/// limit.
+///
+/// The service factory builds a fresh [`McpTools`] per session — and, for clients
+/// negotiating `2026-07-28`, per request, since SEP-2567 drops sessions from that
+/// version. Keep the factory cheap for that reason: it clones [`AppState`]
+/// (pool handles behind `Arc`) and builds the tool router, nothing more.
 pub fn mcp_router(state: AppState, trust_proxy_headers: bool) -> Router {
     let limiter =
         IpRateLimiter::shared_per_minute(state.db.pool.clone(), "mcp", 120, trust_proxy_headers);
     let session_manager = Arc::new(LocalSessionManager::default());
-    let server_config = StreamableHttpServerConfig::default();
+    let server_config = StreamableHttpServerConfig::default()
+        .with_allowed_hosts(allowed_hosts(&state.config.base_url));
 
     let service = StreamableHttpService::new(
         move || Ok(McpTools::new(state.clone())),
@@ -232,4 +221,44 @@ pub fn mcp_router(state: AppState, trust_proxy_headers: bool) -> Router {
         .layer(axum::middleware::from_fn(mcp_auth_challenge))
         .layer(axum::middleware::from_fn(ip_rate_limit))
         .layer(axum::Extension(limiter))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::allowed_hosts;
+
+    #[test]
+    fn deployment_host_is_derived_from_base_url() {
+        let hosts = allowed_hosts("https://app.example.com");
+        assert!(hosts.contains(&"app.example.com".to_string()));
+    }
+
+    #[test]
+    fn port_is_stripped_so_any_port_matches() {
+        // rmcp treats a portless entry as "any port"; keeping the port would
+        // reject requests whose Host carries the proxy's port instead.
+        let hosts = allowed_hosts("https://app.example.com:8443");
+        assert!(hosts.contains(&"app.example.com".to_string()));
+        assert!(!hosts.iter().any(|h| h.contains(':') && h != "::1"));
+    }
+
+    #[test]
+    fn loopback_is_always_allowed() {
+        let hosts = allowed_hosts("https://app.example.com");
+        for expected in ["localhost", "127.0.0.1", "::1"] {
+            assert!(hosts.contains(&expected.to_string()), "missing {expected}");
+        }
+    }
+
+    #[test]
+    fn local_base_url_does_not_duplicate_loopback() {
+        let hosts = allowed_hosts("http://localhost:8080");
+        assert_eq!(hosts.iter().filter(|h| *h == "localhost").count(), 1);
+    }
+
+    #[test]
+    fn unparseable_base_url_still_leaves_loopback() {
+        let hosts = allowed_hosts("not a url");
+        assert_eq!(hosts, vec!["localhost", "127.0.0.1", "::1"]);
+    }
 }

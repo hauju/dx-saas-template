@@ -125,7 +125,17 @@ mod tests {
     /// per-IP rate limiters read the peer address from it, so without it they
     /// would silently key every caller the same way.
     async fn serve(pool: PgPool) -> String {
-        let state = test_state(Database::from_pool(pool));
+        serve_with_base_url(pool, None).await
+    }
+
+    /// Serve with an overridden `base_url`, so tests can exercise behaviour that
+    /// keys off the deployment's public hostname rather than the loopback
+    /// address the test listener actually binds.
+    async fn serve_with_base_url(pool: PgPool, base_url: Option<&str>) -> String {
+        let mut state = test_state(Database::from_pool(pool));
+        if let Some(url) = base_url {
+            state.config.base_url = url.to_string();
+        }
         let router = build(Router::new(), state).await;
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -318,6 +328,213 @@ mod tests {
             .unwrap();
         assert!(challenge.contains("resource_metadata="));
         assert!(challenge.contains("/.well-known/oauth-protected-resource"));
+    }
+
+    /// One MCP request over the Streamable HTTP transport.
+    ///
+    /// The transport answers with SSE, and the first frame is an empty SEP-1699
+    /// priming event — so the JSON-RPC payload is the first `data:` line that
+    /// actually parses, not simply the first one. `session` carries the
+    /// `Mcp-Session-Id` that `initialize` hands out; every later call must echo
+    /// it back or the transport answers `422`.
+    async fn mcp_call(
+        base: &str,
+        token: &str,
+        session: Option<&str>,
+        body: serde_json::Value,
+    ) -> (
+        reqwest::StatusCode,
+        Option<String>,
+        Option<serde_json::Value>,
+    ) {
+        let mut req = client()
+            .post(format!("{base}/mcp"))
+            .header("authorization", format!("Bearer {token}"))
+            .header("accept", "application/json, text/event-stream")
+            .json(&body);
+        if let Some(id) = session {
+            req = req.header("mcp-session-id", id);
+        }
+        let res = req.send().await.unwrap();
+
+        let status = res.status();
+        let session_id = res
+            .headers()
+            .get("mcp-session-id")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
+        let text = res.text().await.unwrap();
+        let payload = text
+            .lines()
+            .filter_map(|l| l.strip_prefix("data:"))
+            .find_map(|d| serde_json::from_str::<serde_json::Value>(d.trim()).ok())
+            .or_else(|| serde_json::from_str(&text).ok());
+        (status, session_id, payload)
+    }
+
+    /// Run the `initialize` + `notifications/initialized` handshake and return
+    /// the session id for subsequent calls.
+    async fn mcp_handshake(base: &str, token: &str, version: &str) -> String {
+        let (status, session, body) = mcp_call(
+            base,
+            token,
+            None,
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": version,
+                    "capabilities": {},
+                    "clientInfo": { "name": "test", "version": "0" }
+                }
+            }),
+        )
+        .await;
+        assert_eq!(status, 200, "initialize failed: {body:?}");
+        let session = session.expect("initialize returned no session id");
+
+        mcp_call(
+            base,
+            token,
+            Some(&session),
+            serde_json::json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }),
+        )
+        .await;
+
+        session
+    }
+
+    async fn seed_key(pool: &PgPool) -> String {
+        let db = Database::from_pool(pool.clone());
+        let user = crate::server::test_support::seed_user(&db, "mcp").await;
+        let (token, _) = crate::server::api_key::create(&db, user, "mcp test")
+            .await
+            .unwrap();
+        token
+    }
+
+    /// The server must answer with the version the *client* asked for, not its
+    /// own newest. rmcp's default `initialize` negotiates this; a hand-written
+    /// one that returns `get_info()` verbatim would pin every client to
+    /// `2026-07-28` and break older ones.
+    #[sqlx::test]
+    async fn mcp_initialize_negotiates_down_to_the_clients_protocol_version(pool: PgPool) {
+        let token = seed_key(&pool).await;
+        let base = serve(pool).await;
+
+        let (status, _, body) = mcp_call(
+            &base,
+            &token,
+            None,
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": { "name": "test", "version": "0" }
+                }
+            }),
+        )
+        .await;
+
+        assert_eq!(status, 200);
+        let body = body.expect("initialize returned no JSON-RPC payload");
+        assert_eq!(body["result"]["protocolVersion"], "2025-06-18");
+        assert_eq!(body["result"]["serverInfo"]["name"], "dx-saas-template");
+    }
+
+    #[sqlx::test]
+    async fn mcp_advertises_its_tools_over_the_streamable_transport(pool: PgPool) {
+        let token = seed_key(&pool).await;
+        let base = serve(pool).await;
+        let session = mcp_handshake(&base, &token, "2025-06-18").await;
+
+        let (status, _, body) = mcp_call(
+            &base,
+            &token,
+            Some(&session),
+            serde_json::json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" }),
+        )
+        .await;
+
+        assert_eq!(status, 200);
+        let body = body.expect("tools/list returned no JSON-RPC payload");
+        let names: Vec<&str> = body["result"]["tools"]
+            .as_array()
+            .expect("tools array")
+            .iter()
+            .map(|t| t["name"].as_str().unwrap())
+            .collect();
+        assert!(names.contains(&"whoami"), "got {names:?}");
+        assert!(names.contains(&"echo"), "got {names:?}");
+    }
+
+    /// rmcp validates `Host` to block DNS rebinding. The allowlist is derived
+    /// from `BASE_URL`, so a Host the deployment does not answer to is refused
+    /// before the request reaches a tool.
+    #[sqlx::test]
+    async fn mcp_rejects_a_host_header_the_deployment_does_not_serve(pool: PgPool) {
+        let token = seed_key(&pool).await;
+        let base = serve(pool).await;
+
+        let res = client()
+            .post(format!("{base}/mcp"))
+            .header("authorization", format!("Bearer {token}"))
+            .header("accept", "application/json, text/event-stream")
+            .header("host", "attacker.example.com")
+            .json(&serde_json::json!({
+                "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": {
+                    "protocolVersion": "2026-07-28",
+                    "capabilities": {},
+                    "clientInfo": { "name": "test", "version": "0" }
+                }
+            }))
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), 403);
+        // Pin the cause: a 403 from anywhere else in the stack would pass a
+        // bare status assertion while proving nothing about Host validation.
+        assert!(
+            res.text()
+                .await
+                .unwrap()
+                .contains("Host header is not allowed")
+        );
+    }
+
+    /// The counterpart to the rejection above, and the case that actually needs
+    /// the allowlist to be derived from `BASE_URL`: rmcp's own default permits
+    /// loopback only, so a deployed instance answering on its public hostname
+    /// would 403 every MCP request.
+    #[sqlx::test]
+    async fn mcp_accepts_the_host_from_base_url(pool: PgPool) {
+        let token = seed_key(&pool).await;
+        let base = serve_with_base_url(pool, Some("https://app.example.test")).await;
+
+        let res = client()
+            .post(format!("{base}/mcp"))
+            .header("authorization", format!("Bearer {token}"))
+            .header("accept", "application/json, text/event-stream")
+            .header("host", "app.example.test")
+            .json(&serde_json::json!({
+                "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": { "name": "test", "version": "0" }
+                }
+            }))
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(res.status(), 200);
     }
 
     #[sqlx::test]

@@ -85,7 +85,7 @@ async-trait = { version = "0.1", optional = true }
 rustls = { version = "0.23", default-features = false, features = ["ring"], optional = true }
 
 # MCP server (Streamable HTTP transport)
-rmcp = { version = "0.14", features = [
+rmcp = { version = "3.0", features = [
     "server",
     "transport-streamable-http-server",
     "macros",
