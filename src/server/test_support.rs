@@ -47,7 +47,7 @@ pub fn test_state(db: Database) -> AppState {
         smtp_host: "127.0.0.1".to_string(),
         smtp_port: 1,
         smtp_from: "test@example.test".to_string(),
-        smtp_insecure: true,
+        smtp_security: smtp::SmtpSecurity::None,
     };
 
     let secrets = Secrets {

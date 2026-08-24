@@ -153,8 +153,11 @@ mod tests {
 
     fn client() -> reqwest::Client {
         // Redirects off: several assertions are about the redirect itself.
+        // Cookies on: the session rotates during login and is re-issued as the
+        // flow progresses, so a hand-carried cookie string goes stale.
         reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
+            .cookie_store(true)
             .build()
             .unwrap()
     }
@@ -286,6 +289,130 @@ mod tests {
             !body.contains("attacker.example"),
             "must not reflect the supplied URI"
         );
+    }
+
+    /// Log in via the dev bypass and rely on the client's cookie jar for the
+    /// session from here on.
+    ///
+    /// The consent screen is behind a login, so a test that exercises it has to
+    /// actually be someone.
+    async fn login(base: &str, http: &reqwest::Client) {
+        // The dev bypass is debug-only and additionally gated on this variable.
+        unsafe { std::env::set_var("DEV_LOGIN", "true") };
+        let res = http
+            .post(format!("{base}/auth/dev-login"))
+            .header("Origin", "http://localhost:8099")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 303, "dev login should succeed");
+    }
+
+    async fn register_client(base: &str, http: &reqwest::Client) -> String {
+        http.post(format!("{base}/oauth/register"))
+            .json(&serde_json::json!({ "redirect_uris": ["http://localhost:9999/callback"] }))
+            .send()
+            .await
+            .unwrap()
+            .json::<serde_json::Value>()
+            .await
+            .unwrap()["client_id"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    }
+
+    /// The full happy path a real MCP client walks: log in, see the consent
+    /// screen, approve it, redeem the code with the PKCE verifier, and use the
+    /// minted token against the MCP endpoint.
+    #[sqlx::test]
+    async fn an_approved_consent_redeems_for_a_token_the_mcp_accepts(pool: PgPool) {
+        let base = serve(pool).await;
+        let http = client();
+        login(&base, &http).await;
+        let client_id = register_client(&base, &http).await;
+
+        let verifier = "test-verifier-string-of-plausible-length";
+        let challenge = crypto::pkce_s256_challenge(verifier);
+
+        let page = http
+            .get(format!("{base}/oauth/authorize"))
+            .query(&[
+                ("response_type", "code"),
+                ("client_id", client_id.as_str()),
+                ("redirect_uri", "http://localhost:9999/callback"),
+                ("code_challenge", challenge.as_str()),
+                ("code_challenge_method", "S256"),
+            ])
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        assert!(
+            page.contains("Model Context Protocol"),
+            "consent screen rendered"
+        );
+        let csrf = page
+            .split(r#"name="csrf_token" value=""#)
+            .nth(1)
+            .and_then(|s| s.split('"').next())
+            .expect("csrf token in the form")
+            .to_string();
+
+        let res = http
+            .post(format!("{base}/oauth/authorize/decision"))
+            .header("Origin", "http://localhost:8099")
+            .form(&[("csrf_token", csrf.as_str()), ("decision", "approve")])
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 303, "approval redirects back to the client");
+        let location = res.headers()["location"].to_str().unwrap().to_string();
+        let code = location
+            .split("code=")
+            .nth(1)
+            .and_then(|s| s.split('&').next())
+            .expect("code in the redirect")
+            .to_string();
+
+        let token: serde_json::Value = http
+            .post(format!("{base}/oauth/token"))
+            .form(&[
+                ("grant_type", "authorization_code"),
+                ("code", code.as_str()),
+                ("redirect_uri", "http://localhost:9999/callback"),
+                ("client_id", client_id.as_str()),
+                ("code_verifier", verifier),
+            ])
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let access = token["access_token"].as_str().expect("access token");
+        assert!(access.starts_with("oat_"));
+
+        // The minted token is a working credential, not just a well-shaped string.
+        let session = mcp_handshake(&base, access, "2025-06-18").await;
+        let (status, _, body) = mcp_call(
+            &base,
+            access,
+            Some(&session),
+            serde_json::json!({
+                "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                "params": { "name": "whoami", "arguments": {} }
+            }),
+        )
+        .await;
+        assert_eq!(status, 200);
+        let text = body.expect("tools/call returned no payload")["result"]["content"][0]["text"]
+            .as_str()
+            .expect("text content")
+            .to_string();
+        assert!(text.contains("dev@localhost"), "got {text}");
     }
 
     #[sqlx::test]

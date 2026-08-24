@@ -64,7 +64,7 @@ pub async fn token(state: AppState, Form(form): Form<TokenForm>) -> Response {
     {
         return token_error(StatusCode::BAD_REQUEST, "invalid_grant");
     }
-    if !crypto::pkce_s256_matches(verifier, &entry.code_challenge) {
+    if !crypto::verify_pkce_s256(verifier, &entry.code_challenge) {
         return token_error(StatusCode::BAD_REQUEST, "invalid_grant");
     }
 

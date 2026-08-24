@@ -54,10 +54,12 @@ dioxus-free-icons = { version = "0.10.0", features = ["lucide"] }
 # Documentation
 dioxus-docs-kit = { version = "0.4.1", default-features = false }
 
+# dx-kit crates — pinned by tag, renamed at the dependency so call sites stay `auth::` / `crypto::` / `smtp::`
+auth = { package = "dx-auth", git = "https://github.com/hauju/dx-kit.git", tag = "dx-auth-v0.2.1", optional = true }
+crypto = { package = "dx-crypto", git = "https://github.com/hauju/dx-kit.git", tag = "dx-crypto-v0.1.0", optional = true }
+smtp = { package = "dx-smtp", git = "https://github.com/hauju/dx-kit.git", tag = "dx-smtp-v0.1.0", optional = true }
+
 # Workspace crates
-auth = { path = "crates/auth", optional = true }
-crypto = { path = "crates/crypto", optional = true }
-smtp = { path = "crates/smtp", optional = true }
 polar = { path = "crates/polar", optional = true }
 
 # Server dependencies
@@ -85,7 +87,7 @@ async-trait = { version = "0.1", optional = true }
 rustls = { version = "0.23", default-features = false, features = ["ring"], optional = true }
 
 # MCP server (Streamable HTTP transport)
-rmcp = { version = "3.0", features = [
+rmcp = { version = "3.1", features = [
     "server",
     "transport-streamable-http-server",
     "macros",
@@ -133,7 +135,7 @@ sentry = ["server", "dep:sentry"]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
 # The HTTP tests drive a real server on a loopback port rather than calling
 # handlers directly, so the middleware stack is exercised as deployed.
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "cookies"] }
 
 [build-dependencies]
 dioxus-docs-kit-build = "0.4.0"

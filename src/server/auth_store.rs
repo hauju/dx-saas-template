@@ -177,7 +177,7 @@ impl AuthEmailSender for AppEmailSender {
             port: config.smtp_port,
             user: secrets.smtp_user.clone(),
             password: secrets.smtp_password.clone(),
-            insecure: config.smtp_insecure,
+            security: config.smtp_security,
         };
 
         let client = smtp::AsyncSmtpClientImpl::new(smtp_config).map_err(|e| {

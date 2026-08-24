@@ -14,7 +14,7 @@ pub struct Config {
     pub smtp_host: String,
     pub smtp_port: u16,
     pub smtp_from: String,
-    pub smtp_insecure: bool,
+    pub smtp_security: smtp::SmtpSecurity,
 }
 
 impl Config {
@@ -39,11 +39,23 @@ impl Config {
                 .parse()
                 .map_err(|_| AppError::Internal("Invalid SMTP_PORT".to_string()))?,
             smtp_from: get_env("SMTP_FROM")?,
-            smtp_insecure: {
-                let host = std::env::var("SMTP_HOST").unwrap_or_default();
-                get_env_optional("SMTP_INSECURE")
-                    .map(|v| v == "true")
-                    .unwrap_or_else(|| is_local_smtp_host(&host))
+            smtp_security: match get_env_optional("SMTP_SECURITY").as_deref() {
+                Some("tls") => smtp::SmtpSecurity::Tls,
+                Some("starttls") => smtp::SmtpSecurity::StartTls,
+                Some("none") => smtp::SmtpSecurity::None,
+                Some(other) => {
+                    return Err(AppError::Internal(format!(
+                        "Invalid SMTP_SECURITY: {other} (expected tls, starttls, or none)"
+                    )));
+                }
+                None => {
+                    let host = std::env::var("SMTP_HOST").unwrap_or_default();
+                    if is_local_smtp_host(&host) {
+                        smtp::SmtpSecurity::None
+                    } else {
+                        smtp::SmtpSecurity::Tls
+                    }
+                }
             },
         })
     }

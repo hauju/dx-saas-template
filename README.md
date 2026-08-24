@@ -26,10 +26,9 @@ Self-hosted. EU-hosted. GDPR-first.
 | Styling         | TailwindCSS 4 + DaisyUI 5 (dark theme), Lucide icons                    |
 | Server          | Axum 0.8, tower-sessions (Postgres-backed)                              |
 | Database        | PostgreSQL 18 (sqlx, compile-time-checked queries, embedded migrations) |
-| Auth            | FerrisKey OIDC (passkey, password, email-OTP) + custom login UI         |
+| Auth            | FerrisKey OIDC (passkey, password, email-OTP) + custom login UI — [`dx-auth`](https://github.com/hauju/dx-kit) |
 | Billing         | [Polar.sh](https://polar.sh) — customers, subscriptions, webhooks       |
-| Email           | SMTP via `lettre` (async pool); [Mailpit](https://mailpit.axllent.org) for local dev |
-| Object storage  | S3-compatible (`crates/storage`) — ready to wire                        |
+| Email           | SMTP via `lettre` (async pool) — [`dx-smtp`](https://github.com/hauju/dx-kit); [Mailpit](https://mailpit.axllent.org) for local dev |
 | Docs site       | [dioxus-docs-kit](https://crates.io/crates/dioxus-docs-kit) v0.4 at `/docs` |
 | Error tracking  | Sentry (optional, feature-gated)                                        |
 
@@ -46,11 +45,8 @@ Self-hosted. EU-hosted. GDPR-first.
 │   ├── models/           # Shared types (UserEntity, AppError)
 │   └── server/           # Server-only: AppState, Config, DB, auth-store impl
 ├── crates/
-│   ├── auth/             # FerrisKey OIDC + custom login UI, JWKS, CSRF, rate-limiting
-│   ├── crypto/           # Argon2 hashing, AES-256-GCM, token generation
-│   ├── smtp/             # lettre async/sync pools
-│   ├── polar/            # Polar.sh billing API + webhook verification
-│   └── storage/          # S3-compatible storage (AWS, MinIO, R2, Spaces)
+│   └── polar/            # Polar.sh billing API + webhook verification
+│                         # (auth, crypto, smtp come from dx-kit, pinned by git tag)
 ├── docs/                 # MDX docs, embedded at compile time via dioxus-docs-kit
 ├── migrations/           # SQL migrations, applied on boot via sqlx::migrate!
 ├── .sqlx/                # Query metadata so sqlx macros build without a database
