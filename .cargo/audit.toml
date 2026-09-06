@@ -1,0 +1,6 @@
+[advisories]
+# RUSTSEC-2023-0071 (`rsa`, Marvin timing side-channel) has no fixed release.
+# It reaches the lockfile only through `sqlx-mysql`, an optional sqlx backend
+# this Postgres-only build never enables, so the crate is never compiled or
+# linked. Cargo.lock still records it, which is what `cargo audit` reads.
+ignore = ["RUSTSEC-2023-0071"]
