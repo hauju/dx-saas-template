@@ -1855,8 +1855,8 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "dx-auth"
-version = "0.10.1"
-source = "git+https://github.com/hauju/dx-kit.git?tag=dx-auth-v0.10.1#f1493b9807876fc103a1f2d91e2c4cdb419fccd9"
+version = "0.10.4"
+source = "git+https://github.com/hauju/dx-kit.git?tag=dx-auth-v0.10.4#1d7aa3b193aa04304c402a220258d67c96a529a0"
 dependencies = [
  "async-trait",
  "axum",
@@ -1889,7 +1889,7 @@ dependencies = [
 [[package]]
 name = "dx-crypto"
 version = "0.1.0"
-source = "git+https://github.com/hauju/dx-kit.git?tag=dx-auth-v0.10.1#f1493b9807876fc103a1f2d91e2c4cdb419fccd9"
+source = "git+https://github.com/hauju/dx-kit.git?tag=dx-auth-v0.10.4#1d7aa3b193aa04304c402a220258d67c96a529a0"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -1941,7 +1941,7 @@ dependencies = [
 [[package]]
 name = "dx-smtp"
 version = "0.1.0"
-source = "git+https://github.com/hauju/dx-kit.git?tag=dx-auth-v0.10.1#f1493b9807876fc103a1f2d91e2c4cdb419fccd9"
+source = "git+https://github.com/hauju/dx-kit.git?tag=dx-auth-v0.10.4#1d7aa3b193aa04304c402a220258d67c96a529a0"
 dependencies = [
  "lettre",
  "secrecy",
@@ -2716,7 +2716,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.1",
+ "socket2 0.5.10",
  "system-configuration",
  "tokio",
  "tower-layer",
@@ -4036,7 +4036,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.1",
  "rustls",
- "socket2 0.6.1",
+ "socket2 0.5.10",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -4075,7 +4075,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.1",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -6429,7 +6429,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

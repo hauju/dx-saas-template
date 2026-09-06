@@ -60,9 +60,9 @@ dioxus-docs-kit = { version = "0.4.1", default-features = false }
 # dx-crypto by path, so a different tag per crate gives cargo two checkouts and
 # two `dx-crypto 0.1.0`s that are not the same type. One tag, one checkout, one
 # copy.
-auth = { package = "dx-auth", git = "https://github.com/hauju/dx-kit.git", tag = "dx-auth-v0.10.1", optional = true }
-crypto = { package = "dx-crypto", git = "https://github.com/hauju/dx-kit.git", tag = "dx-auth-v0.10.1", optional = true }
-smtp = { package = "dx-smtp", git = "https://github.com/hauju/dx-kit.git", tag = "dx-auth-v0.10.1", optional = true }
+auth = { package = "dx-auth", git = "https://github.com/hauju/dx-kit.git", tag = "dx-auth-v0.10.4", optional = true }
+crypto = { package = "dx-crypto", git = "https://github.com/hauju/dx-kit.git", tag = "dx-auth-v0.10.4", optional = true }
+smtp = { package = "dx-smtp", git = "https://github.com/hauju/dx-kit.git", tag = "dx-auth-v0.10.4", optional = true }
 
 # Workspace crates
 polar = { path = "crates/polar", optional = true }
