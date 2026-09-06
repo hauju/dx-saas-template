@@ -74,19 +74,15 @@ impl Config {
 
         Ok(Self {
             db_url: get_env("DATABASE_URL")?,
-            base_url: get_env("BASE_URL")?,
+            base_url: validate_base_url(get_env("BASE_URL")?)?,
             auth_mode,
             tos_version: get_env_optional("TOS_VERSION"),
             ferriskey_url: ferriskey("FERRISKEY_URL")?,
             ferriskey_issuer_url: get_env_optional("FERRISKEY_ISSUER_URL"),
             ferriskey_realm: ferriskey("FERRISKEY_REALM")?,
             ferriskey_client_id: ferriskey("FERRISKEY_CLIENT_ID")?,
-            secure_cookies: get_env_optional("SECURE_COOKIES")
-                .map(|v| v == "true")
-                .unwrap_or(true),
-            trust_proxy_headers: get_env_optional("TRUST_PROXY_HEADERS")
-                .map(|v| v == "true")
-                .unwrap_or(false),
+            secure_cookies: parse_bool("SECURE_COOKIES", true)?,
+            trust_proxy_headers: parse_bool("TRUST_PROXY_HEADERS", false)?,
             smtp_host: get_env("SMTP_HOST")?,
             smtp_port: get_env("SMTP_PORT")?
                 .parse()
@@ -110,9 +106,7 @@ impl Config {
                     }
                 }
             },
-            open_registration: get_env_optional("OPEN_REGISTRATION")
-                .map(|v| v == "true")
-                .unwrap_or(false),
+            open_registration: parse_bool("OPEN_REGISTRATION", false)?,
             allowed_registration_emails: parse_csv_lower(get_env_optional(
                 "ALLOWED_REGISTRATION_EMAILS",
             )),
@@ -122,9 +116,7 @@ impl Config {
             captcha: get_env_optional("CAPTCHA_URL")
                 .zip(get_env_optional("CAPTCHA_SITE_KEY"))
                 .filter(|_| get_env_optional("CAPTCHA_SECRET_KEY").is_some()),
-            coming_soon: get_env_optional("COMING_SOON")
-                .map(|v| v == "true")
-                .unwrap_or(false),
+            coming_soon: parse_bool("COMING_SOON", false)?,
         })
     }
 }
@@ -217,4 +209,73 @@ fn parse_csv_lower(value: Option<String>) -> Vec<String> {
 fn is_local_smtp_host(host: &str) -> bool {
     let h = host.to_lowercase();
     h == "localhost" || h == "mailpit" || h == "127.0.0.1" || h == "::1"
+}
+
+/// A boolean variable, strictly: `true`/`false`, `1`/`0`, `yes`/`no`, any
+/// case; unset or empty means `default`. Anything else refuses to boot rather
+/// than silently picking a side, because `SECURE_COOKIES=TRUE` reading as
+/// `false` used to turn off secure cookies and HSTS without a word.
+fn parse_bool(key: &str, default: bool) -> Result<bool, AppError> {
+    match get_env_optional(key) {
+        None => Ok(default),
+        Some(value) => parse_bool_value(key, &value),
+    }
+}
+
+fn parse_bool_value(key: &str, value: &str) -> Result<bool, AppError> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "true" | "1" | "yes" => Ok(true),
+        "false" | "0" | "no" => Ok(false),
+        other => Err(AppError::Internal(format!(
+            "Invalid {key}: {other:?} (expected true or false)"
+        ))),
+    }
+}
+
+/// `BASE_URL` is the CSRF origin, the passkey Relying Party ID, and the OAuth
+/// issuer, so a value that is not an absolute http(s) URL with a host breaks
+/// three things at once, each with a confusing symptom. Check it at boot.
+fn validate_base_url(value: String) -> Result<String, AppError> {
+    let parsed = url::Url::parse(&value)
+        .map_err(|e| AppError::Internal(format!("Invalid BASE_URL {value:?}: {e}")))?;
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+        return Err(AppError::Internal(format!(
+            "Invalid BASE_URL {value:?}: expected an absolute http(s) URL such as https://app.example.com"
+        )));
+    }
+    Ok(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn booleans_are_case_insensitive_and_refuse_anything_else() {
+        for (input, expected) in [
+            ("true", true),
+            ("TRUE", true),
+            (" True ", true),
+            ("1", true),
+            ("yes", true),
+            ("false", false),
+            ("FALSE", false),
+            ("0", false),
+            ("no", false),
+        ] {
+            assert_eq!(parse_bool_value("X", input).unwrap(), expected, "{input:?}");
+        }
+        // The case the strict parser exists for: a typo must not become `false`.
+        assert!(parse_bool_value("SECURE_COOKIES", "ture").is_err());
+        assert!(parse_bool_value("SECURE_COOKIES", "on").is_err());
+    }
+
+    #[test]
+    fn base_url_must_be_an_absolute_http_url() {
+        assert!(validate_base_url("https://app.example.com".into()).is_ok());
+        assert!(validate_base_url("http://localhost:8080".into()).is_ok());
+        for bad in ["app.example.com", "/dashboard", "ftp://x", "https://", ""] {
+            assert!(validate_base_url(bad.into()).is_err(), "{bad:?}");
+        }
+    }
 }
