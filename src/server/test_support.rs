@@ -48,6 +48,10 @@ pub fn test_state(db: Database) -> AppState {
         smtp_port: 1,
         smtp_from: "test@example.test".to_string(),
         smtp_security: smtp::SmtpSecurity::None,
+        open_registration: false,
+        allowed_registration_emails: Vec::new(),
+        allowed_registration_domains: Vec::new(),
+        captcha: None,
     };
 
     let secrets = Secrets {

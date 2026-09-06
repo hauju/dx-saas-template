@@ -6,11 +6,32 @@ use auth::UserDataRefreshTrigger;
 use crate::UserAuthState;
 use crate::routes::Route;
 
+/// Bollwark widget config for the login page, or `None` when no captcha is
+/// deployed. Its own endpoint because the page cannot read the environment,
+/// and `None` has to be a first-class answer: the form then mounts no widget.
+#[post("/api/captcha")]
+pub async fn get_captcha_config() -> Result<Option<(String, String)>, ServerFnError> {
+    Ok(crate::server::state::AppState::global()
+        .config
+        .captcha
+        .clone())
+}
+
 /// Login page that wraps the auth crate's LoginPage component.
 #[component]
 pub fn LoginPage(redirect_url: String) -> Element {
     let user_auth = use_context::<Signal<UserAuthState>>();
     let nav = use_navigator();
+
+    // The captcha in front of new-account registration. dx-auth reads the same
+    // CAPTCHA_* variables server-side, so the widget this mounts and the token
+    // the server verifies cannot come from different deployments. With none
+    // configured and OPEN_REGISTRATION=true, nothing gates account creation.
+    let captcha = use_server_future(move || async move { get_captcha_config().await })?;
+    let captcha_config = match captcha() {
+        Some(Ok(cfg)) => cfg,
+        _ => None,
+    };
 
     // If already authenticated, redirect to dashboard
     use_effect(move || {
@@ -78,6 +99,7 @@ pub fn LoginPage(redirect_url: String) -> Element {
                         // Auth crate's LoginPage (embedded — no wrapper/header)
                         auth::LoginPage {
                             redirect_url: redirect_url.clone(),
+                            captcha_config,
                             on_success: move |_url: String| {
                                 #[cfg(feature = "web")]
                                 {

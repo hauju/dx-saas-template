@@ -76,7 +76,7 @@ The binary is split by Cargo features. Code gated with `#[cfg(feature = "server"
 
 `auth`, `crypto`, and `smtp` come from [dx-kit](https://github.com/hauju/dx-kit), pinned by git tag in `Cargo.toml` and renamed at the dependency (`auth = { package = "dx-auth", ... }`) so call sites stay `auth::` / `crypto::` / `smtp::`. To change them, edit the dx-kit checkout and cut a new tag (a gitignored `.cargo/config.toml` with a `[patch]` section points cargo at the local checkout during development — see the dx-kit README). All are storage-agnostic and decoupled from the app via traits and config structs:
 
-- **`auth`** (`dx-auth`) — FerrisKey OIDC integration with custom login UI (passkey, password, email-OTP), JWKS validation, CAPTCHA-gated registration, session management (`UserSession` extractor), rate limiting, dev-login bypass. Has `server` and `web` feature flags. Defines `AuthUserStore`, `AuthEmailSender`, and `AuthRateLimitStore` traits that the main app implements.
+- **`auth`** (`dx-auth`) — FerrisKey OIDC integration with custom login UI (passkey, password, email-OTP), JWKS validation, registration policy (`OPEN_REGISTRATION`, or an allowlist, or first-account-only bootstrap) with an optional Bollwark captcha (`CAPTCHA_*`, served to the login page by `get_captcha_config`), session management (`UserSession` extractor), rate limiting, dev-login bypass. Has `server` and `web` feature flags. Defines `AuthUserStore`, `AuthEmailSender`, and `AuthRateLimitStore` traits that the main app implements.
 - **`crypto`** (`dx-crypto`) — Argon2 hashing, AES-256-GCM encryption, token/OTP generation, PKCE S256, SHA-256 lookup hashes.
 - **`smtp`** (`dx-smtp`) — Email sending via `lettre` with sync and async clients, attachment support. Transport security is `SmtpSecurity` (`tls`/`starttls`/`none`), configured via `SMTP_SECURITY`.
 
@@ -131,7 +131,7 @@ Building the image locally therefore requires running `dx bundle --web --release
 
 ### Environment Variables
 
-Copy `.env.example` to `.env`. Key variables: `DATABASE_URL`, `BASE_URL`, `SESSION_SECRET` (hex, 64+ bytes), `FERRISKEY_URL` + `FERRISKEY_REALM` + `FERRISKEY_CLIENT_ID` + `FERRISKEY_CLIENT_SECRET`, SMTP settings, optional Polar billing keys, optional `SENTRY_DSN` + `ENVIRONMENT` (requires `--features sentry`).
+Copy `.env.example` to `.env`. Key variables: `DATABASE_URL`, `BASE_URL`, `SESSION_SECRET` (hex, 64+ bytes), `FERRISKEY_URL` + `FERRISKEY_REALM` + `FERRISKEY_CLIENT_ID` + `FERRISKEY_CLIENT_SECRET`, `OPEN_REGISTRATION` (or `ALLOWED_REGISTRATION_EMAILS` / `_DOMAINS`), optional `CAPTCHA_URL` + `CAPTCHA_SITE_KEY` + `CAPTCHA_SECRET_KEY`, SMTP settings, optional Polar billing keys, optional `SENTRY_DSN` + `ENVIRONMENT` (requires `--features sentry`).
 
 ### Styling
 

@@ -54,10 +54,15 @@ dioxus-free-icons = { version = "0.10.0", features = ["lucide"] }
 # Documentation
 dioxus-docs-kit = { version = "0.4.1", default-features = false }
 
-# dx-kit crates — pinned by tag, renamed at the dependency so call sites stay `auth::` / `crypto::` / `smtp::`
-auth = { package = "dx-auth", git = "https://github.com/hauju/dx-kit.git", tag = "dx-auth-v0.2.1", optional = true }
-crypto = { package = "dx-crypto", git = "https://github.com/hauju/dx-kit.git", tag = "dx-crypto-v0.1.0", optional = true }
-smtp = { package = "dx-smtp", git = "https://github.com/hauju/dx-kit.git", tag = "dx-smtp-v0.1.0", optional = true }
+# dx-kit crates — pinned by tag, renamed at the dependency so call sites stay `auth::` / `crypto::` / `smtp::`.
+#
+# All three take the *same* tag, which is not cosmetic: dx-auth depends on
+# dx-crypto by path, so a different tag per crate gives cargo two checkouts and
+# two `dx-crypto 0.1.0`s that are not the same type. One tag, one checkout, one
+# copy.
+auth = { package = "dx-auth", git = "https://github.com/hauju/dx-kit.git", tag = "dx-auth-v0.8.0", optional = true }
+crypto = { package = "dx-crypto", git = "https://github.com/hauju/dx-kit.git", tag = "dx-auth-v0.8.0", optional = true }
+smtp = { package = "dx-smtp", git = "https://github.com/hauju/dx-kit.git", tag = "dx-auth-v0.8.0", optional = true }
 
 # Workspace crates
 polar = { path = "crates/polar", optional = true }

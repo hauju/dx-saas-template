@@ -66,6 +66,14 @@ pub async fn find_by_id(db: &Database, id: Uuid) -> Result<Option<UserEntity>, A
     Ok(row.map(Into::into))
 }
 
+/// Whether any user exists yet — dx-auth's first-run bootstrap check.
+pub async fn any_exist(db: &Database) -> Result<bool, AppError> {
+    let exists = sqlx::query_scalar!(r#"SELECT EXISTS(SELECT 1 FROM users) AS "exists!""#)
+        .fetch_one(&db.pool)
+        .await?;
+    Ok(exists)
+}
+
 pub async fn find_by_sub(db: &Database, sub: &str) -> Result<Option<UserEntity>, AppError> {
     let row = sqlx::query_as!(
         UserRow,

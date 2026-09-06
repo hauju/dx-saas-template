@@ -147,6 +147,12 @@ impl AuthUserStore for AppAuthUserStore {
     ) -> AuthResult<String> {
         Ok(default_url.to_string())
     }
+
+    async fn has_any_users(&self) -> AuthResult<bool> {
+        user::any_exist(&self.state.db)
+            .await
+            .map_err(|e| AuthError::ServerStateError(format!("DB error: {e}")))
+    }
 }
 
 /// Implements `AuthEmailSender` using the smtp crate.
@@ -259,6 +265,18 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[sqlx::test]
+    async fn reports_whether_any_user_exists(pool: PgPool) {
+        // dx-auth's no-allowlist bootstrap: registration stays open only until
+        // the first account exists, so this must flip on the first row.
+        let db = Database::from_pool(pool.clone());
+        let store = AppAuthUserStore::new(test_state(db));
+        assert!(!store.has_any_users().await.unwrap());
+
+        seed_user(&Database::from_pool(pool), "first").await;
+        assert!(store.has_any_users().await.unwrap());
     }
 
     #[sqlx::test]

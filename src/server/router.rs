@@ -61,6 +61,10 @@ pub async fn build(base: Router, app_state: AppState) -> Router {
         ferriskey_client_secret: app_state.secrets.ferriskey_client_secret.clone(),
         base_url: app_state.config.base_url.clone(),
         trust_proxy_headers: app_state.config.trust_proxy_headers,
+        sso_enabled: false,
+        open_registration: app_state.config.open_registration,
+        allowed_registration_emails: app_state.config.allowed_registration_emails.clone(),
+        allowed_registration_domains: app_state.config.allowed_registration_domains.clone(),
     };
 
     let auth_state = auth::AuthState {

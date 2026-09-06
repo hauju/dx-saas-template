@@ -23,7 +23,7 @@ The login page supports three credentials, auto-detected from the user's account
   <Step title="Branch on credentials">
     - **Has passkey** → server bootstraps a FerrisKey auth-flow session and returns WebAuthn request options. The browser invokes `navigator.credentials.get()` and POSTs the assertion back to `/auth/session/passkey/verify`.
     - **Has password** → page shows a password input that POSTs to `/auth/session/password/verify`.
-    - **No credentials / new user** → CAPTCHA-gated email-OTP flow: a 6-digit code is sent via SMTP and verified at `/auth/session/otp/verify`.
+    - **No credentials / new user** → email-OTP flow, gated by the registration policy and (when configured) a Bollwark captcha: a 6-digit code is sent via SMTP and verified at `/auth/session/otp/verify`.
   </Step>
   <Step title="Token exchange">
     On `Success`, the server exchanges the OIDC `code` for tokens at FerrisKey's `/protocol/openid-connect/token` endpoint using the PKCE verifier. The `id_token` is validated against FerrisKey's JWKS (cached, refreshed on key rotation).
@@ -123,6 +123,23 @@ Set these environment variables for FerrisKey:
 | `FERRISKEY_CLIENT_ID` | OIDC client ID registered in the realm |
 | `FERRISKEY_CLIENT_SECRET` | Client secret. Required for the authorization-code exchange and the `client_credentials` grant used for service-account user lookup/create. |
 | `TRUST_PROXY_HEADERS` | Set to `true` when running behind a reverse proxy so auth rate limiting trusts `X-Forwarded-For`. |
+
+## Registration policy
+
+New accounts are created by the email-OTP flow, and who may create one is a deployment setting:
+
+| Variable | Description |
+| --- | --- |
+| `OPEN_REGISTRATION` | `true` lets any address sign up — the setting for a public product. |
+| `ALLOWED_REGISTRATION_EMAILS` | Comma-separated addresses that may register when registration is not open. |
+| `ALLOWED_REGISTRATION_DOMAINS` | Comma-separated email domains that may register when registration is not open. |
+| `CAPTCHA_URL` / `CAPTCHA_SITE_KEY` / `CAPTCHA_SECRET_KEY` | A [Bollwark](https://github.com/hauju/bollwark) captcha in front of registration. The login page mounts the widget and the server verifies its token; all three must be set. |
+
+With `OPEN_REGISTRATION` unset and both allowlists empty, only the very first account may register (first-run bootstrap) and sign-up closes afterwards.
+
+<Warning>
+An open registration without a captcha leaves nothing in front of account creation. Configure Bollwark for any public deployment.
+</Warning>
 
 <Warning>
 The OIDC client must allow `authorization_code` *and* `client_credentials` grant types — the server uses the latter to manage users (lookup, create, mark email verified) without an interactive flow.

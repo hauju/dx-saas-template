@@ -15,6 +15,18 @@ pub struct Config {
     pub smtp_port: u16,
     pub smtp_from: String,
     pub smtp_security: smtp::SmtpSecurity,
+    /// Let any address create an account (`OPEN_REGISTRATION`). Off, dx-auth
+    /// admits only the allowlists below, or the very first account when both
+    /// are empty.
+    pub open_registration: bool,
+    pub allowed_registration_emails: Vec<String>,
+    pub allowed_registration_domains: Vec<String>,
+    /// Bollwark captcha in front of new-user registration, as
+    /// `(server_url, site_key)`. dx-auth reads `CAPTCHA_URL` / `CAPTCHA_SITE_KEY`
+    /// / `CAPTCHA_SECRET_KEY` itself and requires all three; this copy is what
+    /// the login page needs to mount the widget, so it is `Some` under the
+    /// same condition.
+    pub captcha: Option<(String, String)>,
 }
 
 impl Config {
@@ -57,6 +69,18 @@ impl Config {
                     }
                 }
             },
+            open_registration: get_env_optional("OPEN_REGISTRATION")
+                .map(|v| v == "true")
+                .unwrap_or(false),
+            allowed_registration_emails: parse_csv_lower(get_env_optional(
+                "ALLOWED_REGISTRATION_EMAILS",
+            )),
+            allowed_registration_domains: parse_csv_lower(get_env_optional(
+                "ALLOWED_REGISTRATION_DOMAINS",
+            )),
+            captcha: get_env_optional("CAPTCHA_URL")
+                .zip(get_env_optional("CAPTCHA_SITE_KEY"))
+                .filter(|_| get_env_optional("CAPTCHA_SECRET_KEY").is_some()),
         })
     }
 }
@@ -128,6 +152,18 @@ fn get_env(key: &str) -> Result<String, AppError> {
 
 fn get_env_optional(key: &str) -> Option<String> {
     std::env::var(key).ok().filter(|v| !v.is_empty())
+}
+
+/// Comma-separated list → trimmed, lowercased, empties dropped.
+fn parse_csv_lower(value: Option<String>) -> Vec<String> {
+    value
+        .map(|v| {
+            v.split(',')
+                .map(|s| s.trim().to_lowercase())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn is_local_smtp_host(host: &str) -> bool {
