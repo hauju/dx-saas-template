@@ -4,6 +4,7 @@ mod api_keys;
 mod components;
 mod models;
 mod pages;
+mod passkeys;
 pub mod routes;
 mod subscription;
 mod waitlist;

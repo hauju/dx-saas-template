@@ -6,7 +6,36 @@ use uuid::Uuid;
 
 use auth::{AuthError, AuthPasskeyStore, AuthResult, NewPasskey, StoredPasskey};
 
+use crate::models::AppError;
+use crate::models::passkey::PasskeySummary;
+use crate::server::db::Database;
 use crate::server::state::AppState;
+
+/// Timestamp type for `TIMESTAMPTZ` columns — see `server::user`.
+type Ts = chrono::DateTime<chrono::Utc>;
+
+/// A user's passkeys as the Settings card shows them: labels and dates, no
+/// key material.
+pub async fn list_summaries(db: &Database, user_id: Uuid) -> Result<Vec<PasskeySummary>, AppError> {
+    let rows = sqlx::query!(
+        r#"SELECT id, name, backed_up,
+                  created_at as "created_at: Ts", last_used_at as "last_used_at: Ts"
+           FROM user_passkeys WHERE user_id = $1 ORDER BY created_at"#,
+        user_id
+    )
+    .fetch_all(&db.pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|r| PasskeySummary {
+            id: r.id.to_string(),
+            name: r.name,
+            created_at: r.created_at.to_rfc3339(),
+            last_used_at: r.last_used_at.map(|d| d.to_rfc3339()),
+            backed_up: r.backed_up,
+        })
+        .collect())
+}
 
 pub struct AppAuthPasskeyStore {
     state: AppState,
@@ -188,5 +217,27 @@ mod tests {
         assert!(!store.delete_passkey(&other, &found.id).await.unwrap());
         assert!(store.delete_passkey(&owner, &found.id).await.unwrap());
         assert!(store.list_passkeys(&owner).await.unwrap().is_empty());
+    }
+
+    #[sqlx::test]
+    async fn summaries_carry_labels_and_dates_but_no_key_material(pool: PgPool) {
+        let db = Database::from_pool(pool);
+        let owner = seed_user(&db, "owner").await;
+        let store = AppAuthPasskeyStore::new(test_state(Database::from_pool(db.pool.clone())));
+        store
+            .insert_passkey(&owner.to_string(), new_passkey("cred-2"))
+            .await
+            .unwrap();
+
+        let before = list_summaries(&db, owner).await.unwrap();
+        assert_eq!(before.len(), 1);
+        assert_eq!(before[0].name, "Laptop");
+        assert!(before[0].last_used_at.is_none(), "never used yet");
+        assert!(!before[0].backed_up);
+
+        store.touch_passkey("cred-2", 1, true).await.unwrap();
+        let after = list_summaries(&db, owner).await.unwrap();
+        assert!(after[0].last_used_at.is_some());
+        assert!(after[0].backed_up);
     }
 }

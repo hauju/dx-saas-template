@@ -1,5 +1,6 @@
 pub mod api_key;
 pub mod error;
+pub mod passkey;
 pub mod subscription;
 pub mod user;
 pub mod waitlist;
