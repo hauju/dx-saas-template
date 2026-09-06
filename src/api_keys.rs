@@ -152,6 +152,7 @@ pub fn ApiKeysCard() -> Element {
                                     name: key.name.clone(),
                                     prefix: key.prefix.clone(),
                                     created_at: key.created_at.clone(),
+                                    expires_at: key.expires_at.clone(),
                                     on_revoked: move |_| refresh += 1,
                                 }
                             }
@@ -178,6 +179,7 @@ fn ApiKeyRow(
     name: String,
     prefix: String,
     created_at: String,
+    expires_at: Option<String>,
     on_revoked: EventHandler<()>,
 ) -> Element {
     let mut revoking = use_signal(|| false);
@@ -206,6 +208,11 @@ fn ApiKeyRow(
             }
             div { class: "flex items-center gap-3 shrink-0",
                 span { class: "text-xs text-base-content/50", "{created_at}" }
+                if let Some(expires) = expires_at {
+                    span { class: "badge badge-outline badge-xs",
+                        "expires {expires.get(..10).unwrap_or(&expires)}"
+                    }
+                }
                 button {
                     class: "btn btn-ghost btn-xs text-error",
                     disabled: revoking(),

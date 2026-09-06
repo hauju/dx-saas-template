@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, user_id, name, prefix, hash,\n                  created_at as \"created_at: Ts\",\n                  last_used_at as \"last_used_at: Ts\",\n                  revoked_at as \"revoked_at: Ts\"\n           FROM api_keys WHERE prefix = $1 AND revoked_at IS NULL",
+  "query": "SELECT id, user_id, name, prefix, hash,\n                  created_at as \"created_at: Ts\",\n                  last_used_at as \"last_used_at: Ts\",\n                  revoked_at as \"revoked_at: Ts\",\n                  client_id, scope,\n                  expires_at as \"expires_at: Ts\"\n           FROM api_keys\n           WHERE user_id = $1 AND revoked_at IS NULL\n             AND (expires_at IS NULL OR expires_at > NOW())\n           ORDER BY created_at DESC",
   "describe": {
     "columns": [
       {
@@ -42,11 +42,26 @@
         "ordinal": 7,
         "name": "revoked_at: Ts",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "client_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "scope",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "expires_at: Ts",
+        "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -57,8 +72,11 @@
       false,
       false,
       true,
+      true,
+      true,
+      true,
       true
     ]
   },
-  "hash": "ffe016fdc4e059ec91228611a12d7a8853c05052c9b910bc4d4e7b5437351b15"
+  "hash": "142aa6b2b81b57e693615c6a5213ce33b0bfbd88b66597a5e44f51b9ca5ae240"
 }

@@ -51,15 +51,26 @@ impl McpTools {
     }
 
     /// Resolve the authenticated user from the request headers, or an MCP error.
+    ///
+    /// A token an OAuth client obtained is good for the scope it was granted
+    /// and nothing else; `mcp` is the one this server is (see the metadata's
+    /// `scopes_supported`). User-created keys and JWTs are unscoped.
     async fn authenticate(&self, parts: &Parts) -> Result<ApiAuth, McpError> {
-        api_auth::authenticate(&self.state, &parts.headers)
+        let auth = api_auth::authenticate(&self.state, &parts.headers)
             .await
             .map_err(|_| {
                 McpError::invalid_request(
                     "Missing or invalid credential. Provide 'Authorization: Bearer <token>' or 'X-API-Key: <token>'.",
                     None,
                 )
-            })
+            })?;
+        if !auth.allows("mcp") {
+            return Err(McpError::invalid_request(
+                "This credential was not granted the 'mcp' scope.",
+                None,
+            ));
+        }
+        Ok(auth)
     }
 }
 
@@ -84,9 +95,15 @@ impl McpTools {
             AuthVia::ApiKey => "api_key",
             AuthVia::Jwt => "jwt",
         };
+        // A client-issued token names the client it was granted to, so a
+        // user can tell which connector is asking.
+        let on_behalf = match &auth.client_id {
+            Some(client) => format!(" for OAuth client {client}"),
+            None => String::new(),
+        };
         let text = format!(
-            "Authenticated as {} (id {}) via {}.",
-            auth.user.email, auth.user.id, via
+            "Authenticated as {} (id {}) via {}{}.",
+            auth.user.email, auth.user.id, via, on_behalf
         );
         Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
     }

@@ -20,6 +20,9 @@ pub struct ApiKeyInfo {
     pub prefix: String,
     pub created_at: String,
     pub last_used_at: Option<String>,
+    /// Set on keys an OAuth client obtained (the MCP flow); user-created keys
+    /// do not expire.
+    pub expires_at: Option<String>,
 }
 
 /// Returned once, immediately after creation. Carries the plaintext `token`,
@@ -51,6 +54,14 @@ pub struct ApiKeyEntity {
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub last_used_at: Option<chrono::DateTime<chrono::Utc>>,
     pub revoked_at: Option<chrono::DateTime<chrono::Utc>>,
+
+    /// The OAuth client this key was issued to, when a client rather than the
+    /// user asked for it. Such keys also carry `scope` and `expires_at`.
+    pub client_id: Option<String>,
+    /// Space-separated scopes granted at consent; `None` (a user-created key)
+    /// means everything.
+    pub scope: Option<String>,
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[cfg(feature = "server")]
@@ -62,6 +73,7 @@ impl From<ApiKeyEntity> for ApiKeyInfo {
             prefix: e.prefix,
             created_at: e.created_at.to_rfc3339(),
             last_used_at: e.last_used_at.map(|d| d.to_rfc3339()),
+            expires_at: e.expires_at.map(|d| d.to_rfc3339()),
         }
     }
 }

@@ -407,6 +407,13 @@ mod tests {
             .unwrap();
         let access = token["access_token"].as_str().expect("access token");
         assert!(access.starts_with("oat_"));
+        assert_eq!(token["token_type"], "Bearer");
+        assert_eq!(
+            token["expires_in"].as_u64(),
+            Some(crate::server::oauth::token::ACCESS_TOKEN_TTL_SECONDS),
+            "a client token announces its lifetime"
+        );
+        assert_eq!(token["scope"], "mcp");
 
         // The minted token is a working credential, not just a well-shaped string.
         let session = mcp_handshake(&base, access, "2025-06-18").await;

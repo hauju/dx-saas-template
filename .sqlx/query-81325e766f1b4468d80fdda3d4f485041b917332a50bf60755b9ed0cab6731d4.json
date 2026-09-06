@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO api_keys (id, user_id, name, prefix, hash, client_id, scope, expires_at)\n           VALUES ($1, $2, $3, $4, $5, $6, $7, NOW() + make_interval(secs => $8))\n           RETURNING created_at as \"created_at: Ts\", expires_at as \"expires_at: Ts\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "created_at: Ts",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 1,
+        "name": "expires_at: Ts",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "81325e766f1b4468d80fdda3d4f485041b917332a50bf60755b9ed0cab6731d4"
+}

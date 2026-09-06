@@ -8,8 +8,14 @@ use serde::Deserialize;
 use serde_json::json;
 
 use super::store;
-use crate::server::api_key;
+use crate::server::api_key::{self, ClientBinding};
 use crate::server::state::AppState;
+
+/// How long an access token minted for an MCP client stays valid. There is no
+/// refresh token: when it expires the client gets a 401 and, per the MCP
+/// authorization spec, runs the OAuth flow again, so this is the longest a
+/// consent outlives the person who gave it.
+pub const ACCESS_TOKEN_TTL_SECONDS: u64 = 30 * 24 * 60 * 60;
 
 #[derive(Debug, Deserialize)]
 pub struct TokenForm {
@@ -69,19 +75,26 @@ pub async fn token(state: AppState, Form(form): Form<TokenForm>) -> Response {
     }
 
     // Mint a long-lived opaque token that the API/MCP dual-auth path validates.
-    let access_token = match api_key::create(&state.db, entry.user_id, "Claude (MCP)").await {
-        Ok((token, _)) => token,
-        Err(e) => {
-            tracing::error!("failed to mint MCP access token: {e}");
-            return token_error(StatusCode::INTERNAL_SERVER_ERROR, "server_error");
-        }
+    let binding = ClientBinding {
+        client_id: &entry.client_id,
+        scope: &entry.scope,
+        ttl_seconds: ACCESS_TOKEN_TTL_SECONDS as f64,
     };
+    let access_token =
+        match api_key::create_for_client(&state.db, entry.user_id, "Claude (MCP)", binding).await {
+            Ok((token, _)) => token,
+            Err(e) => {
+                tracing::error!("failed to mint MCP access token: {e}");
+                return token_error(StatusCode::INTERNAL_SERVER_ERROR, "server_error");
+            }
+        };
 
     (
         [(header::CACHE_CONTROL, "no-store")],
         Json(json!({
             "access_token": access_token,
             "token_type": "Bearer",
+            "expires_in": ACCESS_TOKEN_TTL_SECONDS,
             "scope": entry.scope,
         })),
     )

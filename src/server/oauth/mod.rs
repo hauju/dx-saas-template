@@ -15,7 +15,7 @@ mod authorize;
 mod metadata;
 mod register;
 pub mod store;
-mod token;
+pub mod token;
 
 use axum::Extension;
 use axum::Router;

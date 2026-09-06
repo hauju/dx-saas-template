@@ -27,6 +27,22 @@ pub enum AuthVia {
 pub struct ApiAuth {
     pub user: UserEntity,
     pub via: AuthVia,
+    /// Set when the credential was an API key an OAuth client obtained: the
+    /// client and the space-separated scopes it was granted. `None` for a
+    /// user-created key or a JWT, which are not scoped.
+    pub client_id: Option<String>,
+    pub scope: Option<String>,
+}
+
+impl ApiAuth {
+    /// Whether this credential may use `scope`: unscoped credentials may use
+    /// everything, a client's only what it was granted.
+    pub fn allows(&self, scope: &str) -> bool {
+        match &self.scope {
+            None => true,
+            Some(granted) => granted.split_whitespace().any(|s| s == scope),
+        }
+    }
 }
 
 impl<S: Send + Sync> FromRequestParts<S> for ApiAuth {
@@ -81,6 +97,8 @@ async fn resolve_api_key(state: &AppState, token: &str) -> Result<ApiAuth, AppEr
     Ok(ApiAuth {
         user,
         via: AuthVia::ApiKey,
+        client_id: entity.client_id,
+        scope: entity.scope,
     })
 }
 
@@ -98,5 +116,7 @@ async fn resolve_jwt(state: &AppState, token: &str) -> Result<ApiAuth, AppError>
     Ok(ApiAuth {
         user,
         via: AuthVia::Jwt,
+        client_id: None,
+        scope: None,
     })
 }

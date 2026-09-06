@@ -19,12 +19,41 @@ use crate::server::db::Database;
 /// Timestamp type for `TIMESTAMPTZ` columns — see the module docs.
 type Ts = chrono::DateTime<chrono::Utc>;
 
-/// Mint a new API key for `user_id`. Returns the plaintext token (shown once)
-/// alongside the stored entity.
+/// What a key is bound to when an OAuth client, not the user, asked for it.
+pub struct ClientBinding<'a> {
+    pub client_id: &'a str,
+    /// Space-separated scopes granted at consent.
+    pub scope: &'a str,
+    /// Lifetime from now; the key stops verifying afterwards.
+    pub ttl_seconds: f64,
+}
+
+/// Mint a new API key the user asked for: no client, every scope, no expiry.
+/// Returns the plaintext token (shown once) alongside the stored entity.
 pub async fn create(
     db: &Database,
     user_id: Uuid,
     name: &str,
+) -> Result<(String, ApiKeyEntity), AppError> {
+    issue(db, user_id, name, None).await
+}
+
+/// Mint a key on behalf of an OAuth client, bound to that client and its
+/// granted scope, expiring after `ttl_seconds`.
+pub async fn create_for_client(
+    db: &Database,
+    user_id: Uuid,
+    name: &str,
+    binding: ClientBinding<'_>,
+) -> Result<(String, ApiKeyEntity), AppError> {
+    issue(db, user_id, name, Some(binding)).await
+}
+
+async fn issue(
+    db: &Database,
+    user_id: Uuid,
+    name: &str,
+    binding: Option<ClientBinding<'_>>,
 ) -> Result<(String, ApiKeyEntity), AppError> {
     let token = crypto::generate_api_key()
         .map_err(|e| AppError::Internal(format!("token generation failed: {e}")))?;
@@ -35,18 +64,25 @@ pub async fn create(
 
     let id = Uuid::new_v4();
     let name = name.trim().to_string();
+    let client_id = binding.as_ref().map(|b| b.client_id.to_string());
+    let scope = binding.as_ref().map(|b| b.scope.to_string());
+    let ttl_seconds = binding.as_ref().map(|b| b.ttl_seconds);
 
-    // `created_at` comes back from the database default, keeping its clock
-    // authoritative — see the module docs.
-    let created_at = sqlx::query_scalar!(
-        r#"INSERT INTO api_keys (id, user_id, name, prefix, hash)
-           VALUES ($1, $2, $3, $4, $5)
-           RETURNING created_at as "created_at: Ts""#,
+    // Both timestamps come from the database clock, keeping it authoritative
+    // — see the module docs. A NULL ttl makes the interval NULL and the key
+    // permanent.
+    let row = sqlx::query!(
+        r#"INSERT INTO api_keys (id, user_id, name, prefix, hash, client_id, scope, expires_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, NOW() + make_interval(secs => $8))
+           RETURNING created_at as "created_at: Ts", expires_at as "expires_at: Ts""#,
         id,
         user_id,
         name,
         prefix,
         hash,
+        client_id,
+        scope,
+        ttl_seconds,
     )
     .fetch_one(&db.pool)
     .await?;
@@ -57,23 +93,31 @@ pub async fn create(
         name,
         prefix,
         hash,
-        created_at,
+        created_at: row.created_at,
         last_used_at: None,
         revoked_at: None,
+        client_id,
+        scope,
+        expires_at: row.expires_at,
     };
 
     Ok((token, entity))
 }
 
-/// List a user's non-revoked API keys, newest first.
+/// List a user's live API keys (not revoked, not expired), newest first.
 pub async fn list(db: &Database, user_id: Uuid) -> Result<Vec<ApiKeyEntity>, AppError> {
     let rows = sqlx::query_as!(
         ApiKeyEntity,
         r#"SELECT id, user_id, name, prefix, hash,
                   created_at as "created_at: Ts",
                   last_used_at as "last_used_at: Ts",
-                  revoked_at as "revoked_at: Ts"
-           FROM api_keys WHERE user_id = $1 AND revoked_at IS NULL ORDER BY created_at DESC"#,
+                  revoked_at as "revoked_at: Ts",
+                  client_id, scope,
+                  expires_at as "expires_at: Ts"
+           FROM api_keys
+           WHERE user_id = $1 AND revoked_at IS NULL
+             AND (expires_at IS NULL OR expires_at > NOW())
+           ORDER BY created_at DESC"#,
         user_id
     )
     .fetch_all(&db.pool)
@@ -101,13 +145,19 @@ pub async fn verify(db: &Database, token: &str) -> Result<Option<ApiKeyEntity>, 
         return Ok(None);
     };
 
+    // Expiry is enforced here, in the one query every presented token goes
+    // through, so an expired client token fails exactly like a revoked one.
     let rows = sqlx::query_as!(
         ApiKeyEntity,
         r#"SELECT id, user_id, name, prefix, hash,
                   created_at as "created_at: Ts",
                   last_used_at as "last_used_at: Ts",
-                  revoked_at as "revoked_at: Ts"
-           FROM api_keys WHERE prefix = $1 AND revoked_at IS NULL"#,
+                  revoked_at as "revoked_at: Ts",
+                  client_id, scope,
+                  expires_at as "expires_at: Ts"
+           FROM api_keys
+           WHERE prefix = $1 AND revoked_at IS NULL
+             AND (expires_at IS NULL OR expires_at > NOW())"#,
         prefix
     )
     .fetch_all(&db.pool)
@@ -137,6 +187,54 @@ mod tests {
     use super::*;
     use crate::server::test_support::seed_user;
     use sqlx::PgPool;
+
+    #[sqlx::test]
+    async fn client_keys_carry_their_binding_and_stop_at_expiry(pool: PgPool) {
+        let db = Database::from_pool(pool);
+        let user = seed_user(&db, "client-keys").await;
+
+        let (live, entity) = create_for_client(
+            &db,
+            user,
+            "Claude (MCP)",
+            ClientBinding {
+                client_id: "client-abc",
+                scope: "mcp",
+                ttl_seconds: 3600.0,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(entity.client_id.as_deref(), Some("client-abc"));
+        assert_eq!(entity.scope.as_deref(), Some("mcp"));
+        assert!(entity.expires_at.is_some(), "a client key has an expiry");
+        let found = verify(&db, &live)
+            .await
+            .unwrap()
+            .expect("live key verifies");
+        assert_eq!(found.scope.as_deref(), Some("mcp"));
+
+        // Already past its lifetime: refused like a revoked key, and gone from
+        // the user's list.
+        let (expired, _) = create_for_client(
+            &db,
+            user,
+            "Claude (MCP)",
+            ClientBinding {
+                client_id: "client-abc",
+                scope: "mcp",
+                ttl_seconds: -1.0,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(verify(&db, &expired).await.unwrap().is_none());
+        assert_eq!(list(&db, user).await.unwrap().len(), 1);
+
+        // A user-created key has none of this.
+        let (_, plain) = create(&db, user, "CLI").await.unwrap();
+        assert!(plain.client_id.is_none() && plain.scope.is_none() && plain.expires_at.is_none());
+    }
 
     #[sqlx::test]
     async fn mints_a_token_whose_prefix_is_stored_but_whose_secret_is_not(pool: PgPool) {
