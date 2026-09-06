@@ -26,5 +26,44 @@ services:
       MP_SMTP_AUTH_ACCEPT_ANY: 1
       MP_SMTP_AUTH_ALLOW_INSECURE: 1
 
+  # FerrisKey (AUTH_MODE=ferriskey only): `docker compose --profile ferriskey up -d`,
+  # or `just ferriskey`, which also creates the realm and client the app expects.
+  # Console at http://localhost:8090 (admin / admin), API under /api.
+  ferriskey:
+    image: ghcr.io/ferriskey/ferriskey-standalone:0.7.2
+    profiles: ["ferriskey"]
+    ports:
+      - "8090:80"
+    environment:
+      DATABASE_HOST: ferriskey-db
+      DATABASE_NAME: ferriskey
+      DATABASE_USER: ferriskey
+      DATABASE_PASSWORD: ferriskey
+      SERVER_ROOT_PATH: /api
+      WEBAPP_URL: http://localhost:8090
+      ALLOWED_ORIGINS: http://localhost:8090,http://localhost:8080
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: admin
+      ADMIN_EMAIL: admin@example.com
+    depends_on:
+      ferriskey-db:
+        condition: service_healthy
+
+  ferriskey-db:
+    image: postgres:18
+    profiles: ["ferriskey"]
+    volumes:
+      - ferriskey_data:/var/lib/postgresql
+    environment:
+      POSTGRES_USER: ferriskey
+      POSTGRES_PASSWORD: ferriskey
+      POSTGRES_DB: ferriskey
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ferriskey -d ferriskey"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
 volumes:
   postgres_data:
+  ferriskey_data:

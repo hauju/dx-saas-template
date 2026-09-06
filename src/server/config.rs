@@ -1,10 +1,30 @@
 use crate::models::AppError;
 
+/// Which login flow the auth routes run (`AUTH_MODE`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthMode {
+    /// dx-auth's self-owned login: email OTP proves the address and creates
+    /// the account, passkeys authenticate against this app's own database.
+    /// No identity provider; needs only SMTP.
+    Local,
+    /// FerrisKey OIDC behind the same custom login UI, for apps that share a
+    /// realm. Requires the `FERRISKEY_*` variables.
+    Ferriskey,
+}
+
 /// Non-sensitive application configuration loaded from environment variables.
 #[derive(Debug, Clone)]
 pub struct Config {
     pub db_url: String,
     pub base_url: String,
+    pub auth_mode: AuthMode,
+    /// Terms version users must have accepted (`TOS_VERSION`), or `None` for
+    /// no acceptance step. Changing it re-prompts everyone whose stored
+    /// version differs.
+    pub tos_version: Option<String>,
+    /// FerrisKey settings, present only when `AUTH_MODE=ferriskey`; the
+    /// fields dx-auth wants are filled with empty strings otherwise, which its
+    /// local flow never reads.
     pub ferriskey_url: String,
     pub ferriskey_issuer_url: Option<String>,
     pub ferriskey_realm: String,
@@ -37,13 +57,30 @@ impl Config {
     pub fn load_from_env() -> Result<Self, AppError> {
         let _ = dotenvy::dotenv();
 
+        let auth_mode = match get_env_optional("AUTH_MODE").as_deref() {
+            None | Some("local") => AuthMode::Local,
+            Some("ferriskey") => AuthMode::Ferriskey,
+            Some(other) => {
+                return Err(AppError::Internal(format!(
+                    "Invalid AUTH_MODE: {other} (expected local or ferriskey)"
+                )));
+            }
+        };
+        // Required in FerrisKey mode, ignored otherwise.
+        let ferriskey = |key: &str| match auth_mode {
+            AuthMode::Ferriskey => get_env(key),
+            AuthMode::Local => Ok(get_env_optional(key).unwrap_or_default()),
+        };
+
         Ok(Self {
             db_url: get_env("DATABASE_URL")?,
             base_url: get_env("BASE_URL")?,
-            ferriskey_url: get_env("FERRISKEY_URL")?,
+            auth_mode,
+            tos_version: get_env_optional("TOS_VERSION"),
+            ferriskey_url: ferriskey("FERRISKEY_URL")?,
             ferriskey_issuer_url: get_env_optional("FERRISKEY_ISSUER_URL"),
-            ferriskey_realm: get_env("FERRISKEY_REALM")?,
-            ferriskey_client_id: get_env("FERRISKEY_CLIENT_ID")?,
+            ferriskey_realm: ferriskey("FERRISKEY_REALM")?,
+            ferriskey_client_id: ferriskey("FERRISKEY_CLIENT_ID")?,
             secure_cookies: get_env_optional("SECURE_COOKIES")
                 .map(|v| v == "true")
                 .unwrap_or(true),

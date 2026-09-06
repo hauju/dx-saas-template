@@ -210,3 +210,21 @@ body {
         color-mix(in srgb, var(--color-base-200) 96%, transparent);
     box-shadow: 0 12px 30px rgba(0, 0, 0, 0.14);
 }
+
+/* ── dx-auth LocalLoginPage hooks (AUTH_MODE=local) ── */
+/* The crate's page renders fine without these; they give it the same
+   gradient backdrop and glass card as the rest of the template. */
+
+.auth-bg {
+    background:
+        radial-gradient(28rem 28rem at 85% 15%, color-mix(in oklab, var(--color-primary) 8%, transparent), transparent 70%),
+        radial-gradient(20rem 20rem at 10% 85%, color-mix(in oklab, var(--color-secondary) 8%, transparent), transparent 70%),
+        var(--color-base-100);
+}
+
+.auth-card {
+    background: color-mix(in oklab, var(--color-base-200) 60%, transparent);
+    backdrop-filter: blur(24px);
+    border: 1px solid color-mix(in oklab, var(--color-base-300) 50%, transparent);
+    box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+}

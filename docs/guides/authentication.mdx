@@ -1,65 +1,82 @@
 ---
 title: Authentication
-description: How OIDC authentication works with FerrisKey in the DX SaaS Template
+description: Email OTP and passkeys out of the box, FerrisKey OIDC when you need SSO
 sidebarTitle: Authentication
 ---
 
 ## Overview
 
-The template uses **[FerrisKey](https://ferriskey.dev)** as the identity provider, integrated via OIDC (authorization code flow with PKCE) and a custom login UI that drives FerrisKey's REST API directly. Authentication is session-based using `tower-sessions` with PostgreSQL as the session store.
+Authentication comes from [`dx-auth`](https://github.com/hauju/dx-kit) and runs in one of two modes, chosen by `AUTH_MODE`:
+
+| Mode | What signs a user in | What it needs |
+| --- | --- | --- |
+| `local` (default) | A one-time code emailed to the address, which also creates the account on first use, and passkeys (WebAuthn) stored in this app's own database. | Postgres and SMTP, both in `docker compose`. |
+| `ferriskey` | [FerrisKey](https://ferriskey.dev) OIDC behind the same custom login UI: passkeys and passwords held by FerrisKey, email OTP for new accounts. Apps sharing a realm get single sign-on. | A FerrisKey instance with a realm and a confidential client. `just ferriskey` provides one locally. |
+
+Both modes end in the same place: a `tower-sessions` cookie backed by PostgreSQL, read by the `UserSession` extractor on server functions. Switching modes changes the login page and the routes under `/auth/*`; nothing else in the app knows the difference.
 
 <Tip>
-FerrisKey is an open-source, Rust-native IdP with WebAuthn/passkey support. The template's custom login page replaces FerrisKey's built-in UI so you control the UX end-to-end.
+Start in `local` mode. A fresh clone signs in within minutes, and the passkeys users enroll live in your database. Move to `ferriskey` when several apps need one login.
 </Tip>
 
-## Auth Flow
-
-The login page supports three credentials, auto-detected from the user's account state:
+## Local mode
 
 <Steps>
   <Step title="User enters email">
-    The login page POSTs to `/auth/session/start`. The server looks up the user in FerrisKey by email and inspects their credentials.
+    The login page POSTs to `/auth/session/start`. If the account has passkeys the browser is challenged at once; otherwise a 6-digit code goes out via SMTP.
   </Step>
-  <Step title="Branch on credentials">
-    - **Has passkey** → server bootstraps a FerrisKey auth-flow session and returns WebAuthn request options. The browser invokes `navigator.credentials.get()` and POSTs the assertion back to `/auth/session/passkey/verify`.
-    - **Has password** → page shows a password input that POSTs to `/auth/session/password/verify`.
-    - **No credentials / new user** → email-OTP flow, gated by the registration policy and (when configured) a Bollwark captcha: a 6-digit code is sent via SMTP and verified at `/auth/session/otp/verify`.
+  <Step title="Code or passkey is verified">
+    `/auth/session/otp/verify` (or `/auth/session/passkey/verify`) opens the session. A verified code for an unknown address creates the account, subject to the [registration policy](#registration-policy).
   </Step>
-  <Step title="Token exchange">
-    On `Success`, the server exchanges the OIDC `code` for tokens at FerrisKey's `/protocol/openid-connect/token` endpoint using the PKCE verifier. The `id_token` is validated against FerrisKey's JWKS (cached, refreshed on key rotation).
-  </Step>
-  <Step title="Session cookie is set">
-    The server records the user via `AuthUserStore::lookup_or_create_user` and persists the session in PostgreSQL. The signed cookie is HTTP-only and (in production) secure + SameSite=Lax.
+  <Step title="Terms, then a passkey offer">
+    When `TOS_VERSION` is set and the user has not accepted that version, the page asks first. Accounts without a passkey are then offered one; enrollment runs against this app as the WebAuthn Relying Party, whose ID is `BASE_URL`'s host.
   </Step>
   <Step title="Client receives auth state">
-    The login page bumps `UserDataRefreshTrigger`, which re-runs `/api/me`. `UserAuthState` transitions to `Authenticated` and the user is navigated to the redirect URL — no full page reload.
+    The login page bumps `UserDataRefreshTrigger`, which re-runs `/api/me`. `UserAuthState` becomes `Authenticated` and the user lands on the redirect URL without a full reload.
   </Step>
 </Steps>
+
+<Warning>
+A passkey only works against the Relying Party ID it was registered under. Moving the app to another host invalidates every enrolled passkey; users fall back to the email code and enroll again.
+</Warning>
+
+## FerrisKey mode
+
+The same page drives FerrisKey's REST API instead of local stores: `/auth/session/start` looks the address up in FerrisKey and branches on its credentials (passkey challenge, password prompt, or email OTP for a new account). On success the server exchanges the OIDC code for tokens with PKCE, validates the `id_token` against FerrisKey's JWKS, and opens the session. New accounts are created in FerrisKey through the client's service account, which is why the client needs the `client_credentials` grant.
+
+### Running FerrisKey locally
+
+```bash
+just ferriskey
+```
+
+This starts FerrisKey 0.7 from the `ferriskey` compose profile (console at `http://localhost:8090`, `admin` / `admin`) and runs `scripts/ferriskey-bootstrap.sh`, which creates the realm and client the app expects, adds the redirect URI, gives the service account a user-management role, and prints the `FERRISKEY_*` values. If `.env` has an empty `FERRISKEY_CLIENT_SECRET=`, the script fills it in. Set `AUTH_MODE=ferriskey` and restart the app.
+
+The script is idempotent and works against any FerrisKey, not only the local one: point `FERRISKEY_URL` and `FERRISKEY_ADMIN_USERNAME` / `_PASSWORD` at it.
 
 ## Key Components
 
 ### Server Side
 
-The `auth` crate defines two traits that the main app implements:
+The `auth` crate reaches storage through traits the app implements in `src/server/`:
 
 ```rust
-// AuthUserStore — find or create users, run TOS / post-login redirect logic
+// AuthUserStore — find or create users, TOS acceptance, post-login redirect
 #[async_trait]
 pub trait AuthUserStore: Send + Sync {
     async fn get_user_by_sub(&self, sub: &str) -> AuthResult<Option<AuthUser>>;
     async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<AuthUser>>;
     async fn create_user(&self, user: NewAuthUser) -> AuthResult<AuthUser>;
-    async fn update_user_sub(&self, user_id: &str, new_sub: &str) -> AuthResult<()>;
+    async fn update_tos_acceptance(&self, user_id: &str, tos: AuthTosAcceptance) -> AuthResult<()>;
     // ... and a few more
 }
 
+// AuthPasskeyStore — WebAuthn credentials for local mode (user_passkeys table)
 // AuthEmailSender — deliver OTP codes via SMTP
-#[async_trait]
-pub trait AuthEmailSender: Send + Sync {
-    async fn send_verification_code(&self, to_email: &str, code: &str, expires_in_minutes: u32)
-        -> AuthResult<()>;
-}
+// AuthRateLimitStore — shared per-IP counters in PostgreSQL
 ```
+
+`src/server/router.rs` builds one `AuthState` from these and mounts either `local_auth_router` or `auth_router` depending on `AUTH_MODE`.
 
 ### UserSession Extractor
 
@@ -87,7 +104,7 @@ pub enum UserAuthState {
 }
 ```
 
-A `use_server_future` fetches `/api/me` on load. The `UserDataRefreshTrigger` signal allows any component to trigger a re-fetch (e.g., after login or profile update).
+A `use_server_future` fetches `/api/me` on load. The `UserDataRefreshTrigger` signal allows any component to trigger a re-fetch (e.g., after login or profile update). The login route reads `SiteFlags` (fetched once by `App`) to render `LocalLoginPage` or `LoginPage` for the configured mode.
 
 ## Protected Routes
 
@@ -113,27 +130,36 @@ pub fn DashboardShell() -> Element {
 
 ## Configuration
 
-Set these environment variables for FerrisKey:
+| Variable | Description |
+| --- | --- |
+| `AUTH_MODE` | `local` (default) or `ferriskey`. |
+| `TOS_VERSION` | Terms version users must have accepted, shown as an acceptance step on login. Unset means no step. Bump it after changing `/legal/terms` so everyone accepts again. |
+| `TRUST_PROXY_HEADERS` | Set to `true` when running behind a reverse proxy so auth rate limiting trusts `X-Forwarded-For`. |
+
+FerrisKey mode adds:
 
 | Variable | Description |
 | --- | --- |
-| `FERRISKEY_URL` | FerrisKey base API URL (e.g. `http://localhost:3333` or `https://ferriskey.example.com/api`) |
-| `FERRISKEY_ISSUER_URL` | _(Optional)_ Public OIDC issuer base URL. Falls back to `FERRISKEY_URL` (with `/api` stripped) if unset. |
-| `FERRISKEY_REALM` | Realm name configured in FerrisKey (e.g. `myapp`) |
+| `FERRISKEY_URL` | FerrisKey API URL (the local instance serves it at `http://localhost:8090/api`) |
+| `FERRISKEY_ISSUER_URL` | _(Optional)_ Public OIDC issuer base URL. Falls back to `FERRISKEY_URL` with `/api` stripped. |
+| `FERRISKEY_REALM` | Realm name (e.g. `myapp`) |
 | `FERRISKEY_CLIENT_ID` | OIDC client ID registered in the realm |
-| `FERRISKEY_CLIENT_SECRET` | Client secret. Required for the authorization-code exchange and the `client_credentials` grant used for service-account user lookup/create. |
-| `TRUST_PROXY_HEADERS` | Set to `true` when running behind a reverse proxy so auth rate limiting trusts `X-Forwarded-For`. |
+| `FERRISKEY_CLIENT_SECRET` | Client secret. Used for the authorization-code exchange and the `client_credentials` grant that manages users. |
+
+<Warning>
+In FerrisKey mode the OIDC client must allow `authorization_code` *and* `client_credentials`, and its service account needs a role with `manage_users`, `view_users` and `query_users`. The bootstrap script sets all of this up.
+</Warning>
 
 ## Registration policy
 
-New accounts are created by the email-OTP flow, and who may create one is a deployment setting:
+New accounts are created by the email-OTP flow in both modes, and who may create one is a deployment setting:
 
 | Variable | Description |
 | --- | --- |
-| `OPEN_REGISTRATION` | `true` lets any address sign up — the setting for a public product. |
+| `OPEN_REGISTRATION` | `true` lets any address sign up, the setting for a public product. |
 | `ALLOWED_REGISTRATION_EMAILS` | Comma-separated addresses that may register when registration is not open. |
 | `ALLOWED_REGISTRATION_DOMAINS` | Comma-separated email domains that may register when registration is not open. |
-| `CAPTCHA_URL` / `CAPTCHA_SITE_KEY` / `CAPTCHA_SECRET_KEY` | A [Bollwark](https://github.com/hauju/bollwark) captcha in front of registration. The login page mounts the widget and the server verifies its token; all three must be set. |
+| `CAPTCHA_URL` / `CAPTCHA_SITE_KEY` / `CAPTCHA_SECRET_KEY` | A [Bollwark](https://github.com/hauju/bollwark) captcha in front of registration and the waitlist form. The login page mounts the widget and the server verifies its token; all three must be set. |
 
 With `OPEN_REGISTRATION` unset and both allowlists empty, only the very first account may register (first-run bootstrap) and sign-up closes afterwards.
 
@@ -141,15 +167,14 @@ With `OPEN_REGISTRATION` unset and both allowlists empty, only the very first ac
 An open registration without a captcha leaves nothing in front of account creation. Configure Bollwark for any public deployment.
 </Warning>
 
-<Warning>
-The OIDC client must allow `authorization_code` *and* `client_credentials` grant types — the server uses the latter to manage users (lookup, create, mark email verified) without an interactive flow.
-</Warning>
+## Terms of service
+
+`/legal/terms` and `/legal/privacy` are placeholder pages in `src/pages/legal.rs`, and the paths the acceptance step links to. Replace the text, then set or bump `TOS_VERSION`: the version a user accepted is stored on their row, and a mismatch on the next login brings the step back.
 
 ## Security middleware
 
-All routes mounted by `auth_router` are wrapped with:
+All routes mounted by the auth router are wrapped with:
 
-- **Rate limiting** — 20 requests/minute per client IP via `governor`.
+- **Rate limiting** — 20 requests/minute per client IP, counted in PostgreSQL so the quota holds across replicas.
 - **CSRF Origin check** — POST requests must carry `Origin` (or `Referer`) matching `BASE_URL`.
-
-Both are tunable in `crates/auth/src/router.rs` and `rate_limit.rs`.
+- **Body limit** — 64 KiB, since every auth body is small.

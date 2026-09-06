@@ -1855,13 +1855,14 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "dx-auth"
-version = "0.8.0"
-source = "git+https://github.com/hauju/dx-kit.git?tag=dx-auth-v0.8.0#374b72615ee86bb044810e6b3ce12c53597668b4"
+version = "0.10.0"
+source = "git+https://github.com/hauju/dx-kit.git?tag=dx-auth-v0.10.0#583b56ead7e5419b9a2ff27c96f6d021c885044a"
 dependencies = [
  "async-trait",
  "axum",
  "base64 0.22.1",
  "chrono",
+ "ciborium",
  "dioxus",
  "dx-crypto",
  "gloo-timers 0.4.0",
@@ -1869,6 +1870,7 @@ dependencies = [
  "js-sys",
  "jsonwebtoken",
  "reqwest 0.13.2",
+ "ring",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
@@ -1887,7 +1889,7 @@ dependencies = [
 [[package]]
 name = "dx-crypto"
 version = "0.1.0"
-source = "git+https://github.com/hauju/dx-kit.git?tag=dx-auth-v0.8.0#374b72615ee86bb044810e6b3ce12c53597668b4"
+source = "git+https://github.com/hauju/dx-kit.git?tag=dx-auth-v0.10.0#583b56ead7e5419b9a2ff27c96f6d021c885044a"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -1939,7 +1941,7 @@ dependencies = [
 [[package]]
 name = "dx-smtp"
 version = "0.1.0"
-source = "git+https://github.com/hauju/dx-kit.git?tag=dx-auth-v0.8.0#374b72615ee86bb044810e6b3ce12c53597668b4"
+source = "git+https://github.com/hauju/dx-kit.git?tag=dx-auth-v0.10.0#583b56ead7e5419b9a2ff27c96f6d021c885044a"
 dependencies = [
  "lettre",
  "secrecy",
@@ -5360,7 +5362,7 @@ dependencies = [
  "base64 0.21.7",
  "hmac-sha256",
  "http 1.4.0",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "time",
 ]
 

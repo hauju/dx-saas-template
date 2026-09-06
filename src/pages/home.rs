@@ -62,7 +62,7 @@ pub fn Home() -> Element {
                     FeatureCard {
                         icon: rsx! { Icon { icon: LdShieldCheck, width: 22, height: 22 } },
                         title: "Authentication",
-                        description: "FerrisKey OIDC + WebAuthn passkeys with email OTP fallback.",
+                        description: "Passkeys and email OTP out of the box, FerrisKey OIDC when you need SSO.",
                     }
                     FeatureCard {
                         icon: rsx! { Icon { icon: LdCode, width: 22, height: 22 } },

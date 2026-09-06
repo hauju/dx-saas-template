@@ -71,6 +71,7 @@
 @source "./src/**/*.{rs,html,css}";
 @source "./crates/**/*.{rs,html,css}";
 @source "./safelist-docs-kit.html";
+@source "./safelist-dx-auth.html";
 
 /* ── Typography ──
    System sans stack (no bundled web fonts). Headings get tight tracking and

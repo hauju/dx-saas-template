@@ -61,6 +61,7 @@ pub async fn build(base: Router, app_state: AppState) -> Router {
         ferriskey_client_secret: app_state.secrets.ferriskey_client_secret.clone(),
         base_url: app_state.config.base_url.clone(),
         trust_proxy_headers: app_state.config.trust_proxy_headers,
+        tos_version: app_state.config.tos_version.clone(),
         sso_enabled: false,
         open_registration: app_state.config.open_registration,
         allowed_registration_emails: app_state.config.allowed_registration_emails.clone(),
@@ -77,9 +78,17 @@ pub async fn build(base: Router, app_state: AppState) -> Router {
             app_state.db.pool.clone(),
             auth::AUTH_REQUESTS_PER_MINUTE,
         ))),
+        passkey_store: Arc::new(server::passkey_store::AppAuthPasskeyStore::new(
+            app_state.clone(),
+        )),
     };
 
-    let auth_routes = auth::auth_router(auth_config, auth_state);
+    // Both routers own the same `/auth/*` paths, so exactly one is mounted:
+    // the self-owned login by default, FerrisKey's when `AUTH_MODE=ferriskey`.
+    let auth_routes = match app_state.config.auth_mode {
+        server::config::AuthMode::Local => auth::local_auth_router(auth_config, auth_state),
+        server::config::AuthMode::Ferriskey => auth::auth_router(auth_config, auth_state),
+    };
 
     // HSTS is only safe over HTTPS, so gate it on the same flag as secure cookies.
     let hsts = app_state.config.secure_cookies;

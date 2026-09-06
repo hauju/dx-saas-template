@@ -21,8 +21,8 @@ Everything compiles to two binaries: a server (Axum + SSR) and a WASM client —
   <Card title="PostgreSQL" icon="database">
     Relational database accessed with `sqlx`. Schema lives in `migrations/`, embedded in the binary and applied on boot.
   </Card>
-  <Card title="FerrisKey" icon="shield">
-    Open-source, Rust-native OIDC identity provider with WebAuthn/passkey support. The template ships a custom login UI driving FerrisKey's REST API.
+  <Card title="dx-auth" icon="shield">
+    Email one-time codes and passkeys against your own database, no identity provider needed. Switch to FerrisKey OIDC when apps must share one login.
   </Card>
   <Card title="TailwindCSS + DaisyUI" icon="palette">
     Utility-first CSS with DaisyUI 5 component library. Dark theme by default.
@@ -50,11 +50,9 @@ src/
 └── server/          # Server-only (AppState, Config, Database)
 
 crates/
-├── auth/            # FerrisKey OIDC + custom login UI + session management
-├── crypto/          # Argon2, AES-256-GCM, token generation
-├── smtp/            # Email sending via lettre
-├── polar/           # Polar.sh billing API
-└── storage/         # S3-compatible object storage (AWS, MinIO, R2, Spaces)
+└── polar/           # Polar.sh billing API
+
+# auth, crypto and smtp come from dx-kit (github.com/hauju/dx-kit), pinned by tag
 ```
 
 ## Optional features
@@ -68,6 +66,6 @@ crates/
     Set up your development environment and run the template locally.
   </Card>
   <Card title="Authentication" icon="lock" href="/docs/guides/authentication">
-    Learn how the FerrisKey OIDC auth flow works end to end.
+    Email OTP and passkeys by default, FerrisKey OIDC when you need SSO.
   </Card>
 </CardGroup>

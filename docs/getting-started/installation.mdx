@@ -29,10 +29,10 @@ Make sure you have the following installed:
 
     This copies `.env.example` to `.env` and generates a fresh `SESSION_SECRET` for you.
 
-    Then edit `.env` to set the rest:
+    The defaults sign you in by email code (Mailpit catches the mail) with no identity provider to set up. Edit `.env` if you need to change:
     - `DATABASE_URL` — PostgreSQL connection string (default: `postgres://dx_saas:dx_saas@localhost:5432/dx_saas`)
-    - `FERRISKEY_URL` / `FERRISKEY_REALM` / `FERRISKEY_CLIENT_ID` / `FERRISKEY_CLIENT_SECRET` — Your FerrisKey instance, realm, and OIDC client
     - `BASE_URL` — Your app's base URL (default: `http://localhost:8080`)
+    - `COMING_SOON` — on by default; set `false` to see the landing page instead of the pre-launch page
   </Step>
   <Step title="Start infrastructure">
     ```bash
@@ -41,9 +41,11 @@ Make sure you have the following installed:
 
     This starts:
     - **PostgreSQL 18** on port `5432`
-    - **Mailpit** with SMTP on `1025` and web UI on `8025`
+    - **Mailpit** with SMTP on `1025` and web UI on `8025`, where the sign-in codes arrive
 
     Schema migrations in `migrations/` are embedded in the binary and applied automatically on first boot.
+
+    FerrisKey is optional. `just ferriskey` starts one on port `8090` and creates the realm and client the app expects; see [Authentication](/docs/guides/authentication#ferriskey-mode).
   </Step>
   <Step title="Install frontend dependencies">
     ```bash
@@ -60,6 +62,9 @@ Make sure you have the following installed:
 </Steps>
 
 ## Project Commands
+
+`just ferriskey` is the one optional extra: it starts FerrisKey from the `ferriskey` compose profile and runs `scripts/ferriskey-bootstrap.sh` against it.
+
 
 | Command | Description |
 | --- | --- |
@@ -89,13 +94,11 @@ The `dx serve` command automatically compiles Tailwind CSS. You only need to run
     - `CAPTCHA_URL` / `CAPTCHA_SITE_KEY` / `CAPTCHA_SECRET_KEY` — Bollwark captcha in front of registration and the waitlist form
     - `COMING_SOON` — while `true`, `/` is a coming-soon page whose form writes to the `waitlist` table (`SELECT count(*) FROM waitlist` to see how many are waiting); login, docs and the dashboard stay reachable
   </Accordion>
-  <Accordion title="FerrisKey Auth">
-    - `FERRISKEY_URL` — Base API URL (e.g., `http://localhost:3333` or `https://ferriskey.example.com/api`)
-    - `FERRISKEY_ISSUER_URL` — _(Optional)_ Public OIDC issuer base URL
-    - `FERRISKEY_REALM` — Realm name (e.g., `myapp`)
-    - `FERRISKEY_CLIENT_ID` — OIDC client ID registered in the realm
-    - `FERRISKEY_CLIENT_SECRET` — Client secret (allow `authorization_code` + `client_credentials` grants)
+  <Accordion title="Authentication">
+    - `AUTH_MODE` — `local` (default: email OTP + passkeys, nothing else to run) or `ferriskey`
+    - `TOS_VERSION` — terms version users must accept on login; unset disables the step
     - `TRUST_PROXY_HEADERS` — Set to `true` when behind a reverse proxy
+    - FerrisKey mode only: `FERRISKEY_URL` (local instance: `http://localhost:8090/api`), `FERRISKEY_ISSUER_URL` _(optional)_, `FERRISKEY_REALM`, `FERRISKEY_CLIENT_ID`, `FERRISKEY_CLIENT_SECRET` — `just ferriskey` produces all of these
   </Accordion>
   <Accordion title="Email (SMTP)">
     - `SMTP_HOST` — SMTP server host

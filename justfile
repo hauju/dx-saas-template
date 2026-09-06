@@ -23,6 +23,16 @@ prepare:
 init:
     docker compose up -d
 
+# Optional FerrisKey for AUTH_MODE=ferriskey: starts it and creates the realm and
+# client the app expects (see scripts/ferriskey-bootstrap.sh).
+ferriskey:
+    docker compose --profile ferriskey up -d
+    scripts/ferriskey-bootstrap.sh
+
+# Regenerate the Tailwind safelist for dx-auth's login pages after moving the pin.
+safelist:
+    python3 scripts/dx-auth-safelist.py
+
 serve:
     dx serve --addr 0.0.0.0
 

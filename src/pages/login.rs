@@ -5,6 +5,7 @@ use auth::UserDataRefreshTrigger;
 
 use crate::UserAuthState;
 use crate::routes::Route;
+use crate::waitlist::use_site_flags;
 
 /// Bollwark widget config for the login page, or `None` when no captcha is
 /// deployed. Its own endpoint because the page cannot read the environment,
@@ -39,6 +40,31 @@ pub fn LoginPage(redirect_url: String) -> Element {
             nav.push(Route::Dashboard {});
         }
     });
+
+    let on_success = move |_url: String| {
+        #[cfg(feature = "web")]
+        {
+            // Bump the refresh trigger so App re-fetches login data
+            let mut trigger = consume_context::<Signal<UserDataRefreshTrigger>>();
+            trigger.write().0 += 1;
+        }
+    };
+
+    // AUTH_MODE=local: dx-auth's self-owned page brings its own chrome (styled
+    // through the `.auth-bg` / `.auth-card` hooks in main.css), so it is
+    // rendered whole rather than embedded in the card below. Same tree on the
+    // server and the client, or hydration desynchronises.
+    if use_site_flags().local_login {
+        return rsx! {
+            auth::LocalLoginPage {
+                redirect_url: redirect_url.clone(),
+                on_success,
+                captcha_config,
+                app_name: "SaaS Template".to_string(),
+            }
+            div { class: "fixed bottom-4 right-4 z-20", DevLoginButton {} }
+        };
+    }
 
     rsx! {
         div { class: "relative min-h-screen overflow-hidden flex items-center justify-center p-4",
@@ -100,14 +126,7 @@ pub fn LoginPage(redirect_url: String) -> Element {
                         auth::LoginPage {
                             redirect_url: redirect_url.clone(),
                             captcha_config,
-                            on_success: move |_url: String| {
-                                #[cfg(feature = "web")]
-                                {
-                                    // Bump the refresh trigger so App re-fetches login data
-                                    let mut trigger = consume_context::<Signal<UserDataRefreshTrigger>>();
-                                    trigger.write().0 += 1;
-                                }
-                            },
+                            on_success,
                             embed: true,
                         }
 
@@ -124,8 +143,8 @@ pub fn LoginPage(redirect_url: String) -> Element {
     }
 }
 
-/// Development-only shortcut that signs in as the local dev user, bypassing
-/// FerrisKey. Rendered only in debug builds (compiled out of `--release`); the
+/// Development-only shortcut that signs in as the local dev user without an
+/// email or passkey. Rendered only in debug builds (compiled out of `--release`); the
 /// server also requires `DEV_LOGIN=true` for the underlying endpoint to work.
 #[component]
 fn DevLoginButton() -> Element {

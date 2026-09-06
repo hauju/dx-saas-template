@@ -56,6 +56,18 @@ impl AuthUserStore for AppAuthUserStore {
         Ok(user.map(user_entity_to_auth_user))
     }
 
+    async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<AuthUser>> {
+        // The conditional-UI passkey path arrives here with an id taken from a
+        // credential row, so a malformed one is a miss, not an error.
+        let Ok(uuid) = Uuid::parse_str(id) else {
+            return Ok(None);
+        };
+        let user = user::find_by_id(&self.state.db, uuid)
+            .await
+            .map_err(|e| AuthError::ServerStateError(format!("DB error: {e}")))?;
+        Ok(user.map(user_entity_to_auth_user))
+    }
+
     async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<AuthUser>> {
         let user = user::find_by_email(&self.state.db, email)
             .await

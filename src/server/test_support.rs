@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use uuid::Uuid;
 
-use crate::server::config::{Config, Secrets};
+use crate::server::config::{AuthMode, Config, Secrets};
 use crate::server::db::Database;
 use crate::server::state::AppState;
 
@@ -38,6 +38,8 @@ pub fn test_state(db: Database) -> AppState {
     let config = Config {
         db_url: "postgres://test".to_string(),
         base_url: "http://localhost:8099".to_string(),
+        auth_mode: AuthMode::Local,
+        tos_version: Some("1.0".to_string()),
         ferriskey_url: "http://127.0.0.1:1".to_string(),
         ferriskey_issuer_url: None,
         ferriskey_realm: "test".to_string(),

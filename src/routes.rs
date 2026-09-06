@@ -5,6 +5,7 @@ use crate::components::navbar::Navbar;
 use crate::pages::dashboard::Dashboard;
 use crate::pages::docs::{DocsPage, DocsShell};
 use crate::pages::home::Home;
+use crate::pages::legal::{Privacy, Terms};
 use crate::pages::login::LoginPage;
 use crate::pages::settings::Settings;
 
@@ -14,6 +15,10 @@ pub enum Route {
     #[layout(Navbar)]
         #[route("/")]
         Home {},
+        #[route("/legal/terms")]
+        Terms {},
+        #[route("/legal/privacy")]
+        Privacy {},
     #[end_layout]
 
     #[route("/login?:redirect_url")]

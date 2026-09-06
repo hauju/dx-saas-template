@@ -69,5 +69,11 @@ pub fn Navbar() -> Element {
         main { class: "min-h-screen bg-base-100",
             Outlet::<Route> {}
         }
+
+        footer { class: "border-t border-base-300 px-4 py-6 text-center text-xs text-base-content/50",
+            Link { to: Route::Terms {}, class: "link link-hover", "Terms" }
+            " · "
+            Link { to: Route::Privacy {}, class: "link link-hover", "Privacy" }
+        }
     }
 }

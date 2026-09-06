@@ -5,7 +5,7 @@ WASM client and an Axum server; auth, sessions, billing, email, and docs are pre
 
 - 🦀 Rust + Axum + Dioxus
 - 💾 PostgreSQL
-- 🔐 FerrisKey (auth)
+- 🔐 Email OTP + passkeys, FerrisKey OIDC optional (auth)
 - 📧 Scaleway (email)
 - 💳 Polar (billing)
 - 🐳 Coolify (server)
@@ -26,7 +26,7 @@ Self-hosted. EU-hosted. GDPR-first.
 | Styling         | TailwindCSS 4 + DaisyUI 5 (dark theme), Lucide icons                    |
 | Server          | Axum 0.8, tower-sessions (Postgres-backed)                              |
 | Database        | PostgreSQL 18 (sqlx, compile-time-checked queries, embedded migrations) |
-| Auth            | FerrisKey OIDC (passkey, password, email-OTP) + custom login UI — [`dx-auth`](https://github.com/hauju/dx-kit) |
+| Auth            | Email OTP + passkeys in your own DB by default; FerrisKey OIDC behind `AUTH_MODE=ferriskey` — [`dx-auth`](https://github.com/hauju/dx-kit) |
 | Billing         | [Polar.sh](https://polar.sh) — customers, subscriptions, webhooks       |
 | Email           | SMTP via `lettre` (async pool) — [`dx-smtp`](https://github.com/hauju/dx-kit); [Mailpit](https://mailpit.axllent.org) for local dev |
 | Docs site       | [dioxus-docs-kit](https://crates.io/crates/dioxus-docs-kit) v0.4 at `/docs` |
@@ -135,7 +135,7 @@ Clone the repo, then rename the project:
 just rename my-new-project
 ```
 
-Then update `repository` in `Cargo.toml`, wire FerrisKey + Polar credentials in `.env`,
+Then update `repository` in `Cargo.toml`, replace the placeholder `/legal` pages, wire Polar credentials in `.env`,
 and replace `LICENSE` with your own if needed.
 
 ## License

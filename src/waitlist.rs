@@ -17,12 +17,17 @@ pub struct SiteFlags {
     /// instead of the landing page, and the navbar stays hidden. Login, docs
     /// and the dashboard remain reachable at their URLs.
     pub coming_soon: bool,
+    /// `AUTH_MODE=local`: the login route renders dx-auth's self-owned page
+    /// (email OTP + passkeys) rather than the FerrisKey one.
+    pub local_login: bool,
 }
 
 #[get("/api/site")]
 pub async fn get_site_flags() -> Result<SiteFlags, ServerFnError> {
+    let config = &crate::server::state::AppState::global().config;
     Ok(SiteFlags {
-        coming_soon: crate::server::state::AppState::global().config.coming_soon,
+        coming_soon: config.coming_soon,
+        local_login: config.auth_mode == crate::server::config::AuthMode::Local,
     })
 }
 

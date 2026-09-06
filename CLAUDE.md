@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A fullstack SaaS template built with Dioxus 0.7 (Rust), using PostgreSQL, FerrisKey (OIDC auth), Polar (billing), and SMTP email. The app compiles into two binaries via Cargo feature flags: a server (`server` feature) and a WASM client (`web` feature).
+A fullstack SaaS template built with Dioxus 0.7 (Rust), using PostgreSQL, dx-auth (email OTP + passkeys by default, FerrisKey OIDC behind `AUTH_MODE=ferriskey`), Polar (billing), and SMTP email. The app compiles into two binaries via Cargo feature flags: a server (`server` feature) and a WASM client (`web` feature).
 
 ## Commands
 
@@ -12,6 +12,9 @@ A fullstack SaaS template built with Dioxus 0.7 (Rust), using PostgreSQL, Ferris
 # Start infrastructure (PostgreSQL, Mailpit)
 docker compose up -d
 # or: just init
+
+# Optional FerrisKey for AUTH_MODE=ferriskey (compose profile + realm/client bootstrap)
+just ferriskey
 
 # Development server (auto-reloads on changes)
 dx serve --addr 0.0.0.0
@@ -65,10 +68,10 @@ The binary is split by Cargo features. Code gated with `#[cfg(feature = "server"
 
 - **`src/main.rs`** — Dual entry point. Server builds an Axum router with session layer, auth routes, and Dioxus SSR. Client calls `dioxus::launch(App)`. The `App` component provides auth state context and routes.
 - **`src/routes.rs`** — `Route` enum (derives `Routable`). Three layouts: `Navbar` for public pages, `DashboardShell` for authenticated pages, `DocsShell` for documentation pages.
-- **`src/pages/`** — Page components: `Home`, `ComingSoon`, `LoginPage`, `Dashboard`, `Settings`, `DocsPage`.
+- **`src/pages/`** — Page components: `Home`, `ComingSoon`, `LoginPage`, `Terms`/`Privacy` (placeholder legal pages at `/legal/*`, linked from the terms step), `Dashboard`, `Settings`, `DocsPage`.
 - **`src/components/`** — Shared UI: `Navbar`, `DashboardShell`, `ToastProvider`/`ToastManager`.
 - **`src/models/`** — Shared types (`LoggedInData`, `AppError`, `ApiKeyInfo`/`NewApiKey`, `SubscriptionInfo`). `UserEntity` and `ApiKeyEntity` are server-only.
-- **`src/server/`** — Server-only: `AppState` (global singleton via `OnceLock`, also holds the shared `JwksCache`), `Config`/`Secrets`, `Database` (PostgreSQL pool), `user` (row → `UserEntity` read helpers), `AppAuthUserStore`/`AppEmailSender` (trait implementations). Also: `security` (response headers, redacted request spans, reusable `IpRateLimiter`), `api_key`/`api_auth` (opaque `oat_` key store + dual-auth `ApiAuth` extractor), `oauth` (self-hosted OAuth 2.1 AS for MCP), `mcp` (`rmcp` Streamable-HTTP MCP server), `billing` (Polar webhook + subscription gating).
+- **`src/server/`** — Server-only: `AppState` (global singleton via `OnceLock`, also holds the shared `JwksCache`), `Config`/`Secrets`, `Database` (PostgreSQL pool), `user` (row → `UserEntity` read helpers), `AppAuthUserStore`/`AppAuthPasskeyStore`/`AppEmailSender` (trait implementations). Also: `security` (response headers, redacted request spans, reusable `IpRateLimiter`), `api_key`/`api_auth` (opaque `oat_` key store + dual-auth `ApiAuth` extractor), `oauth` (self-hosted OAuth 2.1 AS for MCP), `mcp` (`rmcp` Streamable-HTTP MCP server), `billing` (Polar webhook + subscription gating).
 - **`src/api_keys.rs`** / **`src/subscription.rs`** — Dual-target modules with server functions + Settings UI cards for API-key management and subscription status.
 - **`src/waitlist.rs`** — Dual-target: `SiteFlags` (`COMING_SOON`) fetched once in `App` and read via `use_site_flags`, the `join_waitlist` server function (own 5/min per-IP quota, optional Bollwark check via `server::captcha`), and the `WaitlistForm`. `pages/coming_soon.rs` is the pre-launch front page `Home` swaps in.
 - **`migrations/`** — Numbered SQL migrations (`0001_users.sql`, …), embedded at compile time by `sqlx::migrate!` and applied on boot.
@@ -77,7 +80,7 @@ The binary is split by Cargo features. Code gated with `#[cfg(feature = "server"
 
 `auth`, `crypto`, and `smtp` come from [dx-kit](https://github.com/hauju/dx-kit), pinned by git tag in `Cargo.toml` and renamed at the dependency (`auth = { package = "dx-auth", ... }`) so call sites stay `auth::` / `crypto::` / `smtp::`. To change them, edit the dx-kit checkout and cut a new tag (a gitignored `.cargo/config.toml` with a `[patch]` section points cargo at the local checkout during development — see the dx-kit README). All are storage-agnostic and decoupled from the app via traits and config structs:
 
-- **`auth`** (`dx-auth`) — FerrisKey OIDC integration with custom login UI (passkey, password, email-OTP), JWKS validation, registration policy (`OPEN_REGISTRATION`, or an allowlist, or first-account-only bootstrap) with an optional Bollwark captcha (`CAPTCHA_*`, served to the login page by `get_captcha_config`), session management (`UserSession` extractor), rate limiting, dev-login bypass. Has `server` and `web` feature flags. Defines `AuthUserStore`, `AuthEmailSender`, and `AuthRateLimitStore` traits that the main app implements.
+- **`auth`** (`dx-auth`) — Two login flows behind one session model: `local_auth_router` + `LocalLoginPage` (email OTP + passkeys with this app as the WebAuthn Relying Party; the `local-login` feature) and `auth_router` + `LoginPage` (FerrisKey OIDC with the custom UI). Shared: registration policy (`OPEN_REGISTRATION`, or an allowlist, or first-account-only bootstrap) with an optional Bollwark captcha (`CAPTCHA_*`, served to the login page by `get_captcha_config`), the opt-in terms step (`tos_version`), session management (`UserSession` extractor), rate limiting, dev-login bypass. Has `server`, `local-login` and `web` feature flags. Defines `AuthUserStore`, `AuthPasskeyStore`, `AuthEmailSender`, and `AuthRateLimitStore` traits that the main app implements.
 - **`crypto`** (`dx-crypto`) — Argon2 hashing, AES-256-GCM encryption, token/OTP generation, PKCE S256, SHA-256 lookup hashes.
 - **`smtp`** (`dx-smtp`) — Email sending via `lettre` with sync and async clients, attachment support. Transport security is `SmtpSecurity` (`tls`/`starttls`/`none`), configured via `SMTP_SECURITY`.
 
@@ -100,11 +103,11 @@ To add a new docs page: create an `.mdx` file in `docs/`, add its path to the ap
 ### Key Patterns
 
 - **Global state**: `AppState::global()` via `OnceLock`, also available as an Axum extractor.
-- **Auth flow**: FerrisKey OIDC (auth code + PKCE) → session cookie (tower-sessions + PostgreSQL) → `UserSession` extractor on server functions. Supports passkey, password, and email-OTP login paths.
+- **Auth flow**: `AUTH_MODE` picks the router in `src/server/router.rs`, both fed by one `AuthState`. `local` (default): email OTP proves the address (creating the account), passkeys verify against `user_passkeys`. `ferriskey`: FerrisKey OIDC (auth code + PKCE), passkey/password/OTP paths, users created through the client's service account. Either way → session cookie (tower-sessions + PostgreSQL) → `UserSession` extractor on server functions. `TOS_VERSION` adds an acceptance step to both; the login route renders the page for the mode via `SiteFlags`.
 - **Client auth state**: `UserAuthState` enum provided via context. `use_server_future` fetches `/api/me` on load; a `UserDataRefreshTrigger` signal re-fetches on demand.
 - **Server functions**: Use `#[post("/api/...")]` with optional `session: auth::UserSession` parameter.
 - **Error handling**: `AppError` enum maps to HTTP status codes and converts to `ServerFnError` for RPC.
-- **Database**: PostgreSQL via `sqlx`. Schema lives in `migrations/`, embedded with `sqlx::migrate!` and applied on boot in `Database::new`. Tables: `users` (unique `sub`/`email`, JSONB `subscription`, `tos_version`/`tos_accepted_at` read back by dx-auth's TOS gate), `waitlist` (email primary key, repeat submissions bump `updated_at`), `api_keys` (prefix + owner indexes), `oauth_clients` (unique `client_id`), `oauth_codes` (unique `code`, expiry checked on consumption, abandoned rows swept on insert), `rate_limits` (see below). Queries live in `src/server/user.rs` / `api_key.rs` / `oauth/store.rs` rather than inline at call sites. Adding a table means adding a numbered `.sql` file to `migrations/`.
+- **Database**: PostgreSQL via `sqlx`. Schema lives in `migrations/`, embedded with `sqlx::migrate!` and applied on boot in `Database::new`. Tables: `users` (unique `sub`/`email`, JSONB `subscription`, `tos_version`/`tos_accepted_at` read back by dx-auth's TOS gate), `waitlist` (email primary key, repeat submissions bump `updated_at`), `user_passkeys` (WebAuthn credentials for local auth mode, unique `credential_id`), `api_keys` (prefix + owner indexes), `oauth_clients` (unique `client_id`), `oauth_codes` (unique `code`, expiry checked on consumption, abandoned rows swept on insert), `rate_limits` (see below). Queries live in `src/server/user.rs` / `api_key.rs` / `oauth/store.rs` rather than inline at call sites. Adding a table means adding a numbered `.sql` file to `migrations/`.
 - **Migrations are immutable once applied**: `sqlx` records a checksum per migration, so editing a file that has already run — even just a comment — makes the next boot fail with "was previously applied but has been modified". Always add a new numbered migration instead. (Rebuilding a local database is the fast way out during development.)
 - **Compile-time-checked SQL**: queries use the `sqlx::query!` / `query_as!` macros, so column names, types, and nullability are verified against the schema at build time. Metadata is committed in `.sqlx/`, and `.cargo/config.toml` sets `SQLX_OFFLINE=true`, so a fresh clone builds with no database running. **After changing any SQL or migration you must run `cargo sqlx prepare -- --no-default-features --features server` against a live database** (`docker compose up -d` first). Note what each check actually catches: cached entries are keyed by a hash of the SQL string, so *changing a query* without re-preparing fails the next offline build, but *changing the schema* while leaving queries untouched leaves stale entries that still match and still compile — the failure surfaces at runtime instead. The `schema` CI job covers that second case by building against a real database. Two gotchas: `tower-sessions-sqlx-store` forces sqlx's `time` feature on, and since Cargo unifies features the macros map `TIMESTAMPTZ` to `time::OffsetDateTime` unless you annotate reads as `col as "col: Ts"` (a chrono alias); and timestamps are therefore written by the database (`DEFAULT NOW()` / `NOW()` / `make_interval`) rather than bound from Rust, which also keeps the database clock authoritative across replicas.
 - **API keys (M2M auth)**: `oat_` tokens, Argon2-hashed with a separate indexed prefix for lookup (`src/server/api_key.rs`). The `ApiAuth` extractor (`src/server/api_auth.rs`) accepts either `X-API-Key`/`Authorization: Bearer oat_…` or a FerrisKey JWT. Manage keys in Settings.
@@ -122,7 +125,8 @@ To add a new docs page: create an `.mdx` file in `docs/`, add its path to the ap
 ### Infrastructure
 
 - **PostgreSQL**: Port 5432. Backs application data, the session store (`tower-sessions-sqlx-store`, which manages its own `tower_sessions` schema and prunes expired rows hourly), and shared rate-limit counters.
-- **Mailpit**: Local SMTP testing. SMTP on 1025, Web UI on 8025.
+- **Mailpit**: Local SMTP testing. SMTP on 1025, Web UI on 8025. In local auth mode this is where the sign-in codes land.
+- **FerrisKey** (compose profile `ferriskey`, off by default): `ghcr.io/ferriskey/ferriskey-standalone:0.7.2` on port 8090 with its own Postgres; console `admin`/`admin`, API under `/api`. `scripts/ferriskey-bootstrap.sh` logs in through the console's own auth-code flow (the admin client has no password grant), then idempotently creates the realm, a confidential client with a service account, the redirect URI, and a `manage_users` role for the service account, and fills `FERRISKEY_CLIENT_SECRET` into `.env`.
 
 ### Docker
 
@@ -132,7 +136,7 @@ Building the image locally therefore requires running `dx bundle --web --release
 
 ### Environment Variables
 
-Copy `.env.example` to `.env`. Key variables: `DATABASE_URL`, `BASE_URL`, `SESSION_SECRET` (hex, 64+ bytes), `FERRISKEY_URL` + `FERRISKEY_REALM` + `FERRISKEY_CLIENT_ID` + `FERRISKEY_CLIENT_SECRET`, `OPEN_REGISTRATION` (or `ALLOWED_REGISTRATION_EMAILS` / `_DOMAINS`), optional `CAPTCHA_URL` + `CAPTCHA_SITE_KEY` + `CAPTCHA_SECRET_KEY`, `COMING_SOON` (pre-launch page + waitlist), SMTP settings, optional Polar billing keys, optional `SENTRY_DSN` + `ENVIRONMENT` (requires `--features sentry`).
+Copy `.env.example` to `.env`. Key variables: `DATABASE_URL`, `BASE_URL`, `SESSION_SECRET` (hex, 64+ bytes), `AUTH_MODE` (`local` default, `ferriskey` needs `FERRISKEY_URL` + `FERRISKEY_REALM` + `FERRISKEY_CLIENT_ID` + `FERRISKEY_CLIENT_SECRET`), `TOS_VERSION` (unset = no terms step), `OPEN_REGISTRATION` (or `ALLOWED_REGISTRATION_EMAILS` / `_DOMAINS`), optional `CAPTCHA_URL` + `CAPTCHA_SITE_KEY` + `CAPTCHA_SECRET_KEY`, `COMING_SOON` (pre-launch page + waitlist), SMTP settings, optional Polar billing keys, optional `SENTRY_DSN` + `ENVIRONMENT` (requires `--features sentry`).
 
 ### Styling
 
