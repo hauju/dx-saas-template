@@ -13,7 +13,9 @@ pub struct SubscriptionInfo {
     pub tier: Option<String>,
     /// End of the current period (unix milliseconds), if known.
     pub current_period_end: Option<i64>,
-    /// When we last applied a webhook for this subscription (RFC 3339).
+    /// When Polar last changed this subscription (RFC 3339): the ordering key
+    /// that keeps a late delivery of an older state from overwriting a newer
+    /// one. Arrival time when the payload carried no timestamp.
     pub updated_at: String,
 }
 

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET subscription = $1, updated_at = NOW()\n           WHERE id = $2\n             AND (subscription IS NULL\n                  OR (subscription->>'updated_at')::timestamptz <= ($3::text)::timestamptz)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Jsonb",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bc51ab8b0260c3106494ac52952b27fb57a18bf58d2db6b4ed3c1d286ca118ca"
+}

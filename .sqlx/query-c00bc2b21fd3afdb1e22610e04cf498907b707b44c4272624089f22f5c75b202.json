@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM polar_webhook_events WHERE received_at < NOW() - interval '30 days'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "c00bc2b21fd3afdb1e22610e04cf498907b707b44c4272624089f22f5c75b202"
+}
