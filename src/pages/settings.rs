@@ -8,7 +8,7 @@ use crate::subscription::SubscriptionCard;
 /// Settings page — user account settings.
 #[component]
 pub fn Settings() -> Element {
-    let user_auth = use_context::<Signal<UserAuthState>>();
+    let user_auth = use_context::<Memo<UserAuthState>>();
 
     let (email, username) = match &*user_auth.read() {
         UserAuthState::Authenticated(data) => (data.email.clone(), data.username.clone()),

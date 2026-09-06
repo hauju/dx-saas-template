@@ -198,7 +198,6 @@ fn main() {
 fn App() -> Element {
     // Context providers
     use_context_provider(|| Signal::new(ToastManager::default()));
-    use_context_provider(|| Signal::new(UserAuthState::Loading));
     let user_refresh = use_signal(auth::UserDataRefreshTrigger::default);
     use_context_provider(|| user_refresh);
 
@@ -207,24 +206,24 @@ fn App() -> Element {
     let site_flags = use_server_future(move || async move { waitlist::get_site_flags().await })?;
     use_context_provider(|| site_flags);
 
-    let mut user_auth = use_context::<Signal<UserAuthState>>();
-
     // Fetch login data (re-runs when refresh trigger bumps)
     let user_data = use_server_future(move || {
         let _ = user_refresh();
         async { get_login_data().await }
     })?;
 
-    // Update auth state from resource result
-    use_effect(move || match user_data() {
-        Some(Ok(Some(data))) => {
-            user_auth.set(UserAuthState::Authenticated(data));
-        }
-        Some(Ok(None)) | Some(Err(_)) => {
-            user_auth.set(UserAuthState::NotAuthenticated);
-        }
-        None => {}
+    // Auth state is derived from the resource, not copied into a signal by an
+    // effect: effects never run on the server, so that pattern rendered every
+    // dashboard page as a spinner until hydration. The server future resolves
+    // during SSR (the server function sees the request's session) and its
+    // value is what the client hydrates with, so both sides render the same
+    // page on the first pass.
+    let user_auth = use_memo(move || match user_data() {
+        Some(Ok(Some(data))) => UserAuthState::Authenticated(data),
+        Some(Ok(None)) | Some(Err(_)) => UserAuthState::NotAuthenticated,
+        None => UserAuthState::Loading,
     });
+    use_context_provider(|| user_auth);
 
     rsx! {
         document::Link { rel: "icon", href: FAVICON }

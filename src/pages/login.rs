@@ -21,7 +21,7 @@ pub async fn get_captcha_config() -> Result<Option<(String, String)>, ServerFnEr
 /// Login page that wraps the auth crate's LoginPage component.
 #[component]
 pub fn LoginPage(redirect_url: String) -> Element {
-    let user_auth = use_context::<Signal<UserAuthState>>();
+    let user_auth = use_context::<Memo<UserAuthState>>();
     let nav = use_navigator();
 
     // The captcha in front of new-account registration. dx-auth reads the same

@@ -9,7 +9,7 @@ use crate::waitlist::use_site_flags;
 /// where the only thing to do is join the waitlist.
 #[component]
 pub fn Navbar() -> Element {
-    let user_auth = use_context::<Signal<UserAuthState>>();
+    let user_auth = use_context::<Memo<UserAuthState>>();
     let coming_soon = use_site_flags().coming_soon;
 
     rsx! {

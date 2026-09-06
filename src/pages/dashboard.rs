@@ -5,7 +5,7 @@ use crate::UserAuthState;
 /// Dashboard page — main authenticated landing page.
 #[component]
 pub fn Dashboard() -> Element {
-    let user_auth = use_context::<Signal<UserAuthState>>();
+    let user_auth = use_context::<Memo<UserAuthState>>();
 
     let username = match &*user_auth.read() {
         UserAuthState::Authenticated(data) => data.username.clone(),

@@ -9,7 +9,7 @@ use crate::routes::Route;
 /// Redirects to login when user is not authenticated.
 #[component]
 pub fn DashboardShell() -> Element {
-    let user_auth = use_context::<Signal<UserAuthState>>();
+    let user_auth = use_context::<Memo<UserAuthState>>();
     let nav = use_navigator();
 
     // Redirect to login when not authenticated
@@ -27,7 +27,17 @@ pub fn DashboardShell() -> Element {
                 span { class: "loading loading-spinner loading-lg text-primary" }
             }
         },
-        UserAuthState::NotAuthenticated => rsx! {},
+        // The effect above sends the browser to the login page once hydrated;
+        // until then (or without JavaScript) give the visitor the same way out.
+        UserAuthState::NotAuthenticated => rsx! {
+            div { class: "flex items-center justify-center min-h-screen",
+                Link {
+                    to: Route::LoginPage { redirect_url: "/dashboard".to_string() },
+                    class: "link link-primary",
+                    "Sign in to continue"
+                }
+            }
+        },
         UserAuthState::Authenticated(user) => {
             let username = user.username.clone();
             let email = user.email.clone();
