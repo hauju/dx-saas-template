@@ -25,6 +25,12 @@ pub struct UserEntity {
     #[serde(default)]
     pub subscription: Option<crate::models::subscription::SubscriptionInfo>,
 
+    /// TOS version the user accepted, `None` until they have.
+    pub tos_version: Option<String>,
+
+    /// When that version was accepted.
+    pub tos_accepted_at: Option<chrono::DateTime<chrono::Utc>>,
+
     /// When the user was created
     pub created_at: chrono::DateTime<chrono::Utc>,
 

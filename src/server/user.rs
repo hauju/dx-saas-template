@@ -33,6 +33,8 @@ struct UserRow {
     name: Option<String>,
     avatar_url: Option<String>,
     subscription: Option<Json<SubscriptionInfo>>,
+    tos_version: Option<String>,
+    tos_accepted_at: Option<Ts>,
     created_at: chrono::DateTime<chrono::Utc>,
     updated_at: chrono::DateTime<chrono::Utc>,
 }
@@ -46,6 +48,8 @@ impl From<UserRow> for UserEntity {
             name: r.name,
             avatar_url: r.avatar_url,
             subscription: r.subscription.map(|j| j.0),
+            tos_version: r.tos_version,
+            tos_accepted_at: r.tos_accepted_at,
             created_at: r.created_at,
             updated_at: r.updated_at,
         }
@@ -57,6 +61,7 @@ pub async fn find_by_id(db: &Database, id: Uuid) -> Result<Option<UserEntity>, A
         UserRow,
         r#"SELECT id, sub, email, name, avatar_url,
                   subscription as "subscription: Json<SubscriptionInfo>",
+                  tos_version, tos_accepted_at as "tos_accepted_at: Ts",
                   created_at as "created_at: Ts", updated_at as "updated_at: Ts"
            FROM users WHERE id = $1"#,
         id
@@ -64,6 +69,30 @@ pub async fn find_by_id(db: &Database, id: Uuid) -> Result<Option<UserEntity>, A
     .fetch_optional(&db.pool)
     .await?;
     Ok(row.map(Into::into))
+}
+
+/// Record acceptance of a TOS version. The timestamp comes from the database
+/// clock like every other one here; `accepted == false` clears it, which
+/// dx-auth reads as "must accept again".
+pub async fn set_tos_acceptance(
+    db: &Database,
+    id: Uuid,
+    version: &str,
+    accepted: bool,
+) -> Result<(), AppError> {
+    sqlx::query!(
+        r#"UPDATE users
+           SET tos_version = $1,
+               tos_accepted_at = CASE WHEN $2::bool THEN NOW() END,
+               updated_at = NOW()
+           WHERE id = $3"#,
+        version,
+        accepted,
+        id
+    )
+    .execute(&db.pool)
+    .await?;
+    Ok(())
 }
 
 /// Whether any user exists yet — dx-auth's first-run bootstrap check.
@@ -79,6 +108,7 @@ pub async fn find_by_sub(db: &Database, sub: &str) -> Result<Option<UserEntity>,
         UserRow,
         r#"SELECT id, sub, email, name, avatar_url,
                   subscription as "subscription: Json<SubscriptionInfo>",
+                  tos_version, tos_accepted_at as "tos_accepted_at: Ts",
                   created_at as "created_at: Ts", updated_at as "updated_at: Ts"
            FROM users WHERE sub = $1"#,
         sub
@@ -93,6 +123,7 @@ pub async fn find_by_email(db: &Database, email: &str) -> Result<Option<UserEnti
         UserRow,
         r#"SELECT id, sub, email, name, avatar_url,
                   subscription as "subscription: Json<SubscriptionInfo>",
+                  tos_version, tos_accepted_at as "tos_accepted_at: Ts",
                   created_at as "created_at: Ts", updated_at as "updated_at: Ts"
            FROM users WHERE email = $1"#,
         email

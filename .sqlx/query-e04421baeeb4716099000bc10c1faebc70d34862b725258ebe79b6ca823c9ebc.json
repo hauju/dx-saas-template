@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, sub, email, name, avatar_url,\n                  subscription as \"subscription: Json<SubscriptionInfo>\",\n                  created_at as \"created_at: Ts\", updated_at as \"updated_at: Ts\"\n           FROM users WHERE sub = $1",
+  "query": "SELECT id, sub, email, name, avatar_url,\n                  subscription as \"subscription: Json<SubscriptionInfo>\",\n                  tos_version, tos_accepted_at as \"tos_accepted_at: Ts\",\n                  created_at as \"created_at: Ts\", updated_at as \"updated_at: Ts\"\n           FROM users WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -35,18 +35,28 @@
       },
       {
         "ordinal": 6,
+        "name": "tos_version",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "tos_accepted_at: Ts",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
         "name": "created_at: Ts",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 7,
+        "ordinal": 9,
         "name": "updated_at: Ts",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
       "Left": [
-        "Text"
+        "Uuid"
       ]
     },
     "nullable": [
@@ -56,9 +66,11 @@
       true,
       true,
       true,
+      true,
+      true,
       false,
       false
     ]
   },
-  "hash": "dd894d0f37580487fe8d453e6d62eb510fd5ab49c19fecbbabba0700b24743ab"
+  "hash": "e04421baeeb4716099000bc10c1faebc70d34862b725258ebe79b6ca823c9ebc"
 }

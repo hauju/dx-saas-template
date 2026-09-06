@@ -103,6 +103,8 @@ impl AuthUserStore for AppAuthUserStore {
             name: None,
             avatar_url: None,
             subscription: None,
+            tos_version: None,
+            tos_accepted_at: None,
             created_at: row.created_at,
             updated_at: row.updated_at,
         };
@@ -131,13 +133,13 @@ impl AuthUserStore for AppAuthUserStore {
         Ok(())
     }
 
-    async fn update_tos_acceptance(
-        &self,
-        _user_id: &str,
-        _tos: AuthTosAcceptance,
-    ) -> AuthResult<()> {
-        // No-op for now — placeholder for future TOS tracking
-        Ok(())
+    async fn update_tos_acceptance(&self, user_id: &str, tos: AuthTosAcceptance) -> AuthResult<()> {
+        let id = Uuid::parse_str(user_id)
+            .map_err(|e| AuthError::ServerStateError(format!("Invalid user ID: {e}")))?;
+
+        user::set_tos_acceptance(&self.state.db, id, &tos.latest_version, tos.accepted)
+            .await
+            .map_err(|e| AuthError::ServerStateError(format!("DB update error: {e}")))
     }
 
     async fn determine_post_login_redirect(
@@ -219,7 +221,11 @@ fn user_entity_to_auth_user(entity: UserEntity) -> AuthUser {
         sub: entity.sub,
         email: entity.email,
         display_name: entity.name,
-        tos_acceptance: None,
+        // dx-auth re-prompts while this is `None` or names an older version.
+        tos_acceptance: entity.tos_version.map(|latest_version| AuthTosAcceptance {
+            latest_version,
+            accepted: entity.tos_accepted_at.is_some(),
+        }),
     }
 }
 
@@ -277,6 +283,37 @@ mod tests {
 
         seed_user(&Database::from_pool(pool), "first").await;
         assert!(store.has_any_users().await.unwrap());
+    }
+
+    #[sqlx::test]
+    async fn tos_acceptance_round_trips(pool: PgPool) {
+        // dx-auth asks for acceptance while this is `None` or an older
+        // version, so what is stored must come back exactly as written.
+        let db = Database::from_pool(pool);
+        let id = seed_user(&db, "tos").await;
+        let store = AppAuthUserStore::new(test_state(db));
+        let tos = |accepted: bool| AuthTosAcceptance {
+            latest_version: "1.0".to_string(),
+            accepted,
+        };
+
+        let before = store.get_user_by_sub("sub-tos").await.unwrap().unwrap();
+        assert!(before.tos_acceptance.is_none(), "nothing accepted yet");
+
+        store
+            .update_tos_acceptance(&id.to_string(), tos(true))
+            .await
+            .unwrap();
+        let after = store.get_user_by_sub("sub-tos").await.unwrap().unwrap();
+        assert_eq!(after.tos_acceptance, Some(tos(true)));
+
+        // Withdrawing keeps the version but drops the acceptance.
+        store
+            .update_tos_acceptance(&id.to_string(), tos(false))
+            .await
+            .unwrap();
+        let withdrawn = store.get_user_by_sub("sub-tos").await.unwrap().unwrap();
+        assert_eq!(withdrawn.tos_acceptance, Some(tos(false)));
     }
 
     #[sqlx::test]
