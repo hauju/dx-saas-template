@@ -131,7 +131,7 @@ To add a new docs page: create an `.mdx` file in `docs/`, add its path to the ap
 
 ### Docker
 
-The `Dockerfile` does **not** compile anything — it packages a bundle built outside Docker. CI (`.github/workflows/deploy.yml`) runs `dx bundle --web --release` and the image copies the resulting `target/dx/dx-saas-template/release/web` into a slim Debian runtime. This keeps cargo/wasm caching in CI and the runtime image small; the deploy host never compiles. Docs, `build.rs` output, and SQL migrations are embedded in the server binary at compile time, so none of them ship as files. The app listens on port 8080, and the image declares a `HEALTHCHECK` against `/health`.
+The `Dockerfile` does **not** compile anything — it packages a bundle built outside Docker. `.github/workflows/deploy.yml` runs only after the `CI` workflow has passed on `main` (`workflow_run`), one deploy at a time (a concurrency group), and checks out the commit CI verified rather than the branch head; it runs `dx bundle --web --release` and the image copies the resulting `target/dx/dx-saas-template/release/web` into a slim Debian runtime. This keeps cargo/wasm caching in CI and the runtime image small; the deploy host never compiles. Docs, `build.rs` output, and SQL migrations are embedded in the server binary at compile time, so none of them ship as files. The app listens on port 8080, and the image declares a `HEALTHCHECK` against `/health`.
 
 Building the image locally therefore requires running `dx bundle --web --release` first.
 

@@ -5,27 +5,41 @@ name: Build and deploy
 # container registry. Finally the host (e.g. Coolify) is told to pull + redeploy.
 # The deploy target never compiles anything.
 #
-# Runs alongside ci.yml (fmt/clippy/test). A non-compiling commit fails the
-# bundle step here, so it never pushes/deploys.
+# Runs only after ci.yml (fmt/clippy/machete, tests, schema, audit) has passed
+# on main, via `workflow_run`, and deploys the commit CI checked (`head_sha`),
+# not whatever main points at by the time this starts. One deploy at a time:
+# the concurrency group queues a second push behind the first rather than
+# racing it. `workflow_dispatch` still allows a manual run of the current main.
 #
 # Configure these repo settings before enabling (Settings → Secrets and variables):
 #   Variables: REGISTRY (e.g. ghcr.io), REGISTRY_USERNAME, COOLIFY_DEPLOY_URL
 #   Secrets:   REGISTRY_PASSWORD, COOLIFY_TOKEN
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
 
 env:
   REGISTRY: ${{ vars.REGISTRY }}
   IMAGE_NAME: dx-saas-template
+  # The commit CI passed on; on a manual run, the current main.
+  DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
   build-and-deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
 
       - uses: dtolnay/rust-toolchain@master
         with:
@@ -73,7 +87,7 @@ jobs:
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.DEPLOY_SHA }}
 
       # Optional: tell your host (e.g. Coolify) to pull the new image and redeploy.
       - name: Trigger deploy
