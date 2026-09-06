@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO waitlist (email) VALUES ($1)\n         ON CONFLICT (email) DO UPDATE SET updated_at = NOW()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e9f5f4a8d127dde0240866f729c830092e75986ed16f7630b4e5c4ae9dc5b993"
+}

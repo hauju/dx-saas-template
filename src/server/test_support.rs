@@ -52,6 +52,7 @@ pub fn test_state(db: Database) -> AppState {
         allowed_registration_emails: Vec::new(),
         allowed_registration_domains: Vec::new(),
         captcha: None,
+        coming_soon: false,
     };
 
     let secrets = Secrets {
@@ -62,6 +63,7 @@ pub fn test_state(db: Database) -> AppState {
         smtp_password: secrecy::SecretString::from(String::new()),
         polar_access_token: None,
         polar_webhook_secret: None,
+        captcha_secret_key: None,
     };
 
     let jwks = Arc::new(auth::JwksCache::new(

@@ -2,6 +2,7 @@ pub mod api_auth;
 pub mod api_key;
 pub mod auth_store;
 pub mod billing;
+pub mod captcha;
 pub mod config;
 pub mod db;
 pub mod health;
@@ -13,6 +14,7 @@ pub mod router;
 pub mod security;
 pub mod state;
 pub mod user;
+pub mod waitlist;
 
 #[cfg(test)]
 pub mod test_support;

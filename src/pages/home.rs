@@ -2,11 +2,17 @@ use dioxus::prelude::*;
 use dioxus_free_icons::{Icon, icons::ld_icons::*};
 
 use crate::HEADER_SVG;
+use crate::pages::coming_soon::ComingSoon;
 use crate::routes::Route;
+use crate::waitlist::use_site_flags;
 
-/// Landing page.
+/// Landing page, or the coming-soon page while `COMING_SOON=true`.
 #[component]
 pub fn Home() -> Element {
+    if use_site_flags().coming_soon {
+        return rsx! { ComingSoon {} };
+    }
+
     rsx! {
         section { class: "relative overflow-hidden",
             // Ambient hero backdrop: soft azure glow + masked guideline grid.

@@ -3,13 +3,17 @@ use dioxus_free_icons::{Icon, icons::ld_icons::*};
 
 use crate::UserAuthState;
 use crate::routes::Route;
+use crate::waitlist::use_site_flags;
 
-/// Public navbar with login/signup buttons.
+/// Public navbar with login/signup buttons. Hidden on a coming-soon site,
+/// where the only thing to do is join the waitlist.
 #[component]
 pub fn Navbar() -> Element {
     let user_auth = use_context::<Signal<UserAuthState>>();
+    let coming_soon = use_site_flags().coming_soon;
 
     rsx! {
+        if !coming_soon {
         div { class: "navbar glass-panel border-b border-base-300 px-4 lg:px-8 sticky top-0 z-30",
             div { class: "flex-1",
                 Link {
@@ -59,6 +63,7 @@ pub fn Navbar() -> Element {
                     }
                 }
             }
+        }
         }
 
         main { class: "min-h-screen bg-base-100",

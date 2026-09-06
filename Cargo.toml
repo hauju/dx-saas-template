@@ -90,6 +90,8 @@ hex = { version = "0.4", optional = true }
 url = { version = "2.5", optional = true }
 async-trait = { version = "0.1", optional = true }
 rustls = { version = "0.23", default-features = false, features = ["ring"], optional = true }
+# Server-to-server captcha verification for the app's own forms (`server::captcha`).
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
 
 # MCP server (Streamable HTTP transport)
 rmcp = { version = "3.1", features = [
@@ -129,6 +131,7 @@ server = [
     "dep:smtp",
     "dep:polar",
     "dep:rustls",
+    "dep:reqwest",
     "dep:rmcp",
     "dep:schemars",
 ]

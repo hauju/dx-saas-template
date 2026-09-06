@@ -1,3 +1,4 @@
+pub mod coming_soon;
 pub mod dashboard;
 pub mod docs;
 pub mod home;

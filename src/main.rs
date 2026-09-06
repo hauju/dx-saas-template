@@ -6,6 +6,7 @@ mod models;
 mod pages;
 pub mod routes;
 mod subscription;
+mod waitlist;
 
 #[cfg(feature = "server")]
 mod server;
@@ -199,6 +200,11 @@ fn App() -> Element {
     use_context_provider(|| Signal::new(UserAuthState::Loading));
     let user_refresh = use_signal(auth::UserDataRefreshTrigger::default);
     use_context_provider(|| user_refresh);
+
+    // Deployment flags (coming-soon mode), fetched once and read by the navbar
+    // and the home route through `waitlist::use_site_flags`.
+    let site_flags = use_server_future(move || async move { waitlist::get_site_flags().await })?;
+    use_context_provider(|| site_flags);
 
     let mut user_auth = use_context::<Signal<UserAuthState>>();
 

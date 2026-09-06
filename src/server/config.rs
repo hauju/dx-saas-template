@@ -27,6 +27,10 @@ pub struct Config {
     /// the login page needs to mount the widget, so it is `Some` under the
     /// same condition.
     pub captcha: Option<(String, String)>,
+    /// `COMING_SOON=true`: `/` is the coming-soon page with the waitlist
+    /// instead of the landing page. Off unless set, so a launched site can
+    /// never hide itself by losing a variable.
+    pub coming_soon: bool,
 }
 
 impl Config {
@@ -81,6 +85,9 @@ impl Config {
             captcha: get_env_optional("CAPTCHA_URL")
                 .zip(get_env_optional("CAPTCHA_SITE_KEY"))
                 .filter(|_| get_env_optional("CAPTCHA_SECRET_KEY").is_some()),
+            coming_soon: get_env_optional("COMING_SOON")
+                .map(|v| v == "true")
+                .unwrap_or(false),
         })
     }
 }
@@ -99,6 +106,9 @@ pub struct Secrets {
     pub smtp_password: secrecy::SecretString,
     pub polar_access_token: Option<String>,
     pub polar_webhook_secret: Option<String>,
+    /// Bollwark secret for verifying the app's own forms (`server::captcha`);
+    /// dx-auth reads the same variable itself for the login page.
+    pub captcha_secret_key: Option<String>,
 }
 
 impl std::fmt::Debug for Secrets {
@@ -142,6 +152,7 @@ impl Secrets {
             ),
             polar_access_token: get_env_optional("POLAR_ACCESS_TOKEN"),
             polar_webhook_secret: get_env_optional("POLAR_WEBHOOK_SECRET"),
+            captcha_secret_key: get_env_optional("CAPTCHA_SECRET_KEY"),
         })
     }
 }

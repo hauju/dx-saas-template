@@ -82,6 +82,12 @@ The `dx serve` command automatically compiles Tailwind CSS. You only need to run
     - `BASE_URL` — Public URL of your application
     - `SESSION_SECRET` — Hex-encoded session signing key (64+ bytes)
     - `SECURE_COOKIES` — Set to `true` in production (HTTPS)
+    - `COMING_SOON` — `true` replaces the landing page with a coming-soon page and waitlist (see the Waitlist accordion)
+  </Accordion>
+  <Accordion title="Registration & Waitlist">
+    - `OPEN_REGISTRATION` — `true` lets any address sign up; see [Authentication](/docs/guides/authentication) for the allowlist alternative
+    - `CAPTCHA_URL` / `CAPTCHA_SITE_KEY` / `CAPTCHA_SECRET_KEY` — Bollwark captcha in front of registration and the waitlist form
+    - `COMING_SOON` — while `true`, `/` is a coming-soon page whose form writes to the `waitlist` table (`SELECT count(*) FROM waitlist` to see how many are waiting); login, docs and the dashboard stay reachable
   </Accordion>
   <Accordion title="FerrisKey Auth">
     - `FERRISKEY_URL` — Base API URL (e.g., `http://localhost:3333` or `https://ferriskey.example.com/api`)

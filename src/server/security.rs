@@ -159,7 +159,7 @@ impl IpRateLimiter {
     }
 }
 
-fn rate_limit_key(
+pub fn rate_limit_key(
     headers: &HeaderMap,
     peer: Option<SocketAddr>,
     trust_proxy_headers: bool,
